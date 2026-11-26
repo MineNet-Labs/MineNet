@@ -19,11 +19,20 @@ interface ILotPassport is IERC721 {
     function tokenOfLot(bytes32 lotId) external view returns (uint256 tokenId);
 
     /**
-     * @notice Whether a lot is locked under an escrow order.
+     * @notice Whether a lot is locked under a trade (escrow order or B2B delivery).
      * @param tokenId Token id.
      * @return locked True if locked.
      */
     function escrowLocked(uint256 tokenId) external view returns (bool locked);
+
+    /**
+     * @notice While a lot is locked under a trade, the first time its custody reached an organisation's account
+     * (including the custodian at lock time).
+     * @param tokenId Token id.
+     * @param orgId Organisation.
+     * @return When custody first reached the organisation during the current lock (0 = never, or not locked).
+     */
+    function custodyReachedAt(uint256 tokenId, bytes32 orgId) external view returns (uint64);
 
     /**
      * @notice The mine site a registered lot came from (0 for derived lots).
@@ -105,19 +114,19 @@ interface ILotPassport is IERC721 {
     function moduleFlag(uint256 tokenId, address reporter, bytes32 evidenceHash) external returns (uint256 flagId);
 
     /**
-     * @notice The escrow locks a lot under an accepted order.
+     * @notice The escrow or an approved trade contract locks a lot it was approved for.
      * @param tokenId Lot.
      */
     function lockForEscrow(uint256 tokenId) external;
 
     /**
-     * @notice The escrow unlocks a lot whose order ended without a sale.
+     * @notice The contract that locked a lot unlocks it after a trade ended without a sale.
      * @param tokenId Lot.
      */
     function unlockFromEscrow(uint256 tokenId) external;
 
     /**
-     * @notice The escrow settles a locked lot to the buyer.
+     * @notice The contract that locked a lot settles it to the buyer.
      * @param tokenId Lot.
      * @param to Buyer.
      */

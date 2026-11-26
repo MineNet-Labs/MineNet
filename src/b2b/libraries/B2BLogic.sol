@@ -170,9 +170,11 @@ library B2BLogic {
     /**
      * @notice Validates and commits the lots of a delivery and its shipment, returning the lots' total trusted
      * weight.
-     * @dev Every lot must be of the agreed mineral, inspected, not frozen or escrow-locked, owned by the seller's
-     * organisation, not committed elsewhere, at or above the minimum grade, approved for transfer to {B2B}, and
-     * (with a shipment) in that shipment. The shipment is then checked as a whole.
+     * @dev Every lot must be of the agreed mineral, inspected, not frozen or locked under another trade, owned by
+     * the seller's organisation, not committed elsewhere, at or above the minimum grade, approved for transfer to
+     * {B2B}, and (with a shipment) in that shipment. The shipment is then checked as a whole. Each lot is then
+     * locked on the passport under {B2B}: until the delivery ends, the seller cannot sell, transfer or process it
+     * elsewhere, and revoking the approval no longer blocks the buyer's title.
      * @param a The agreement.
      * @param lotCommitted {B2B}'s lot commitment map.
      * @param tokenIds Lots.
@@ -206,6 +208,7 @@ library B2BLogic {
             }
             lotCommitted[id] = true;
             weight += deps.supplyChain.lastWeight(id);
+            deps.passport.lockForEscrow(id);
         }
         _checkShipment(a, shipmentId, tokenIds.length, deps);
     }
@@ -215,8 +218,10 @@ library B2BLogic {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Whether the buyer's organisation holds custody of every lot of a delivery, and its shipment (if
-     * any) is delivered.
+     * @notice Whether custody of every lot of a delivery has reached the buyer's organisation since dispatch, and its
+     * shipment (if any) is delivered.
+     * @dev Uses the passport's custody record for the lock, so a buyer who passes the goods on before anyone
+     * confirms the arrival cannot make the delivery look missed.
      * @param a The agreement.
      * @param lots The delivery's lots.
      * @param shipmentId Its shipment (0 = none).
@@ -234,7 +239,7 @@ library B2BLogic {
         ) return false;
         bytes32 buyerOrg = _party(a, B2BLib.other(a.seller)).orgId;
         for (uint256 i; i < lots.length; ++i) {
-            if (deps.registry.participant(deps.passport.custodianOf(lots[i])).orgId != buyerOrg) return false;
+            if (deps.passport.custodyReachedAt(lots[i], buyerOrg) == 0) return false;
         }
         return true;
     }
@@ -308,7 +313,8 @@ library B2BLogic {
 
     /**
      * @notice Transfers every lot of a delivery from the seller's organisation to the buyer's account of record.
-     * @dev Reverts if a lot left the seller's organisation, or the passport refuses the transfer (e.g. frozen).
+     * @dev The lots are locked under {B2B}, so they are still the seller's; the passport refuses the transfer while a
+     * lot is frozen. Must run before {releaseLots}.
      * @param a The agreement.
      * @param lots The delivery's lots.
      * @param deps Contracts to use.
@@ -320,10 +326,45 @@ library B2BLogic {
             uint256 id = lots[i];
             address owner = deps.passport.ownerOf(id);
             if (deps.registry.participant(owner).orgId != sellerOrg) revert B2BLib.B2B__LotNotReleasable(id);
-            // `owner` is in the seller's organisation, approved B2B and committed this lot to the delivery itself.
-            // slither-disable-next-line arbitrary-send-erc20
-            deps.passport.transferFrom(owner, buyer, id);
+            deps.passport.escrowTransfer(id, buyer);
         }
+    }
+
+    /**
+     * @notice Frees a delivery's lots: they can fill another delivery, and any lot still locked under {B2B} (no
+     * title transfer) is unlocked for the seller.
+     * @param lots The delivery's lots.
+     * @param lotCommitted {B2B}'s lot commitment map.
+     * @param passport Lot passport.
+     */
+    function releaseLots(uint256[] storage lots, mapping(uint256 => bool) storage lotCommitted, ILotPassport passport)
+        external
+    {
+        for (uint256 i; i < lots.length; ++i) {
+            uint256 id = lots[i];
+            lotCommitted[id] = false;
+            if (passport.escrowLocked(id)) passport.unlockFromEscrow(id);
+        }
+    }
+
+    /**
+     * @notice Reverts unless the caller may decide a dispute opened at `openedAt`: the agreed arbiter after
+     * `negotiation`, or the platform (registry admin) when no arbiter was agreed or the arbiter has not ruled
+     * within {B2BLib.ARBITRATION_PERIOD} after that.
+     * @param arbiter The agreed arbiter (zero = none).
+     * @param openedAt When the dispute was opened.
+     * @param negotiation Time the parties have to settle first.
+     * @param registry Participant registry.
+     */
+    function requireArbiter(address arbiter, uint64 openedAt, uint64 negotiation, IMineNetRegistry registry)
+        public
+        view
+    {
+        uint64 until = openedAt + negotiation;
+        if (block.timestamp <= until) revert B2BLib.B2B__NegotiationPeriod(until);
+        if (arbiter != address(0) && msg.sender == arbiter) return;
+        bool arbiterLapsed = arbiter == address(0) || block.timestamp > until + B2BLib.ARBITRATION_PERIOD;
+        if (!arbiterLapsed || !registry.isAdmin(msg.sender)) revert B2BLib.B2B__NotArbiter(msg.sender);
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -98,9 +98,30 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
     address public escrow;
 
     /**
-     * @notice Lots locked under an accepted escrow order. Only the escrow can transfer them.
+     * @notice The contract that holds a lot locked under a trade ({EscrowManager} order or {B2B} delivery); zero if
+     * unlocked. Only that contract can transfer the lot while it is locked.
      */
-    mapping(uint256 tokenId => bool) public escrowLocked;
+    mapping(uint256 tokenId => address locker) public lockedBy;
+
+    /**
+     * @notice Trade contracts other than {escrow} (e.g. {B2B}) allowed to lock lots they were approved for.
+     */
+    mapping(address locker => bool) public isLocker;
+
+    /**
+     * @dev Lock nonce of a lot, incremented on every lock so custody records of an earlier trade never count.
+     */
+    mapping(uint256 tokenId => uint32) private _lockNonce;
+
+    /**
+     * @dev keccak(tokenId, lock nonce, orgId) => first time custody reached that organisation during the lock.
+     */
+    mapping(bytes32 key => uint64) private _custodyReachedAt;
+
+    /**
+     * @notice Flags a reporter raised that a regulator later dismissed (a public record against frivolous flags).
+     */
+    mapping(address reporter => uint32) public dismissedFlagsOf;
 
     /**
      * @notice Module contracts ({DeliveryManager}, {SupplyChain}...) trusted to hand over custody and raise flags.
@@ -233,6 +254,19 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
     }
 
     /**
+     * @notice Allows or disallows a trade contract (e.g. {B2B}) to lock lots it was approved for.
+     * @dev Only a registry admin. {escrow} is always a locker.
+     * @param locker The trade contract.
+     * @param enabled Whether it may lock lots.
+     * @custom:emits LockerSet
+     */
+    function setLocker(address locker, bool enabled) external onlyRegistryAdmin {
+        if (locker == address(0)) revert PassportLib.LotPassport__ZeroAddress();
+        isLocker[locker] = enabled;
+        emit PassportLib.LockerSet(locker, enabled);
+    }
+
+    /**
      * @notice Enables or disables a module contract ({DeliveryManager}, {SupplyChain}, {LotTagRegistry},
      * {CargoTracker}).
      * @dev Only a {MineNetRegistry} admin. A module can move custody after its own two-party checks and raise flags
@@ -280,6 +314,7 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
         if (to == from || !_isCustodyRecipient(to)) revert PassportLib.LotPassport__InvalidRecipient(to);
 
         lot.custodian = to;
+        _trackCustody(tokenId, to);
         _recordAs(tokenId, PassportLib.EventType.CustodyConfirmed, to, from, evidenceHash, 0);
         emit PassportLib.CustodyChanged(tokenId, from, to);
     }
@@ -308,51 +343,53 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Locks a lot under an accepted order.
-     * @dev Only the escrow. The owner must have approved the escrow for this token (or for all tokens). That
-     * approval is the seller's consent, so a malicious escrow cannot lock lots it was never approved for. The lot
-     * must not be frozen or already locked.
+     * @notice Locks a lot under a trade: an accepted escrow order, or a dispatched B2B delivery.
+     * @dev Only {escrow} or an approved locker. The owner must have approved the caller for this token (or for all
+     * tokens): that approval is the seller's consent. The lot must not be frozen or already locked. While locked,
+     * only the locker can transfer the lot (revoking the approval no longer stops the trade), it cannot be sold
+     * elsewhere or processed, and every organisation custody reaches is recorded ({custodyReachedAt}).
      * @param tokenId Lot.
      * @custom:emits EscrowLockChanged
      */
     function lockForEscrow(uint256 tokenId) external whenNotPaused {
-        _onlyEscrow();
-        if (escrowLocked[tokenId]) revert PassportLib.LotPassport__LotLocked(tokenId);
-        if (!_isAuthorized(_requireOwned(tokenId), escrow, tokenId)) {
+        address locker = _onlyLocker();
+        if (lockedBy[tokenId] != address(0)) revert PassportLib.LotPassport__LotLocked(tokenId);
+        if (!_isAuthorized(_requireOwned(tokenId), locker, tokenId)) {
             revert PassportLib.LotPassport__EscrowNotApproved(tokenId);
         }
         _requireNotFrozen(tokenId);
-        escrowLocked[tokenId] = true;
+        lockedBy[tokenId] = locker;
+        _lockNonce[tokenId] += 1;
+        _trackCustody(tokenId, _lots[tokenId].custodian);
         emit PassportLib.EscrowLockChanged(tokenId, true);
     }
 
     /**
-     * @notice Unlocks a lot whose order ended without a sale.
-     * @dev Only the escrow.
+     * @notice Unlocks a lot whose trade ended without a sale.
+     * @dev Only the contract that locked it.
      * @param tokenId Lot.
      * @custom:emits EscrowLockChanged
      */
     function unlockFromEscrow(uint256 tokenId) external {
-        _onlyEscrow();
-        if (!escrowLocked[tokenId]) revert PassportLib.LotPassport__NotLocked(tokenId);
-        escrowLocked[tokenId] = false;
+        _onlyLockerOf(tokenId);
+        delete lockedBy[tokenId];
         emit PassportLib.EscrowLockChanged(tokenId, false);
     }
 
     /**
      * @notice Settles a locked lot to the buyer and unlocks it.
-     * @dev Only the escrow. All ownership-transfer rules of {_update} still apply (e.g. the lot must not be
-     * frozen).
+     * @dev Only the contract that locked it. The ownership-transfer rules of {_update} apply (e.g. the lot must not
+     * be frozen), except that the buyer's `OWN_LOT` authorisation is not re-checked: it was checked when the trade
+     * was entered, and a licence lapsing mid-trade must not keep the seller from being paid.
      * @param tokenId Lot.
      * @param to Buyer.
      * @custom:emits PassportEventRecorded (OwnershipTransfer)
      * @custom:emits EscrowLockChanged
      */
     function escrowTransfer(uint256 tokenId, address to) external {
-        _onlyEscrow();
-        if (!escrowLocked[tokenId]) revert PassportLib.LotPassport__NotLocked(tokenId);
+        _onlyLockerOf(tokenId);
         _update(to, tokenId, address(0)); // approval was checked when the lot was locked
-        escrowLocked[tokenId] = false;
+        delete lockedBy[tokenId];
         emit PassportLib.EscrowLockChanged(tokenId, false);
     }
 
@@ -418,15 +455,21 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Records an inspection result. A failed inspection makes the lot unsellable.
+     * @notice Records an inspection result.
      * @dev The caller needs `INSPECT_LOT` and must be independent: neither the lot's owner nor its custodian. Once
-     * the inspection registry is set, it must also be the inspector the platform assigned to the lot (operators
-     * never choose their inspector). Not allowed on consumed lots.
+     * the inspection registry is set, it must hold the open assignment the platform made for the lot (operators
+     * never choose their inspector); submitting closes that assignment, so a result can never be revised. Effect:
+     * - a newly registered lot becomes Inspected or Rejected;
+     * - a Rejected lot (re-inspected on a regulator's order) becomes Inspected if it now passes;
+     * - an Inspected lot that fails a later inspection is flagged, which freezes it until a regulator reviews the
+     *   finding ({resolveFlag}); its status is not flipped, so trades in progress follow the regulator's decision.
+     * Not allowed on consumed lots.
      * @param tokenId Lot.
      * @param passed Whether the lot passed.
      * @param reportHash Hash of the inspection report.
      * @custom:emits LotStatusChanged
      * @custom:emits PassportEventRecorded (Inspection)
+     * @custom:emits FlagRaised
      */
     function submitInspection(uint256 tokenId, bool passed, bytes32 reportHash)
         external
@@ -440,15 +483,19 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
             revert PassportLib.LotPassport__InspectorConflict(tokenId, inspector);
         }
         IInspectionRegistry inspections = inspectionRegistry;
-        if (address(inspections) != address(0) && inspections.assignedInspector(tokenId) != inspector) {
+        if (address(inspections) != address(0) && !inspections.isAssignmentOpen(tokenId, inspector)) {
             revert PassportLib.LotPassport__NotAssignedInspector(tokenId, inspector);
         }
-        if (lot.status == PassportLib.LotStatus.Consumed) {
-            revert PassportLib.LotPassport__InvalidStatus(tokenId, lot.status);
-        }
+        PassportLib.LotStatus status = lot.status;
+        if (status == PassportLib.LotStatus.Consumed) revert PassportLib.LotPassport__InvalidStatus(tokenId, status);
 
-        _setStatus(tokenId, passed ? PassportLib.LotStatus.Inspected : PassportLib.LotStatus.Rejected);
         _record(tokenId, PassportLib.EventType.Inspection, address(0), reportHash, passed ? 1 : 0);
+        if (status == PassportLib.LotStatus.Inspected) {
+            if (!passed) _raiseFlag(tokenId, inspector, reportHash);
+        } else if (passed || status == PassportLib.LotStatus.Registered) {
+            _setStatus(tokenId, passed ? PassportLib.LotStatus.Inspected : PassportLib.LotStatus.Rejected);
+        }
+        if (address(inspections) != address(0)) inspections.completeInspection(tokenId, inspector);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -476,13 +523,17 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
         if (from != address(0)) {
             _requireNotPaused();
             if (to == address(0)) revert PassportLib.LotPassport__InvalidRecipient(to); // passports are never burned
-            if (escrowLocked[tokenId] && _msgSender() != escrow) revert PassportLib.LotPassport__LotLocked(tokenId);
+            address locker = lockedBy[tokenId];
+            bool settlement = locker != address(0) && _msgSender() == locker;
+            if (locker != address(0) && !settlement) revert PassportLib.LotPassport__LotLocked(tokenId);
             PassportLib.Lot storage lot = _lots[tokenId];
             if (lot.status != PassportLib.LotStatus.Inspected) {
                 revert PassportLib.LotPassport__InvalidStatus(tokenId, lot.status);
             }
             _requireNotFrozen(tokenId);
-            if (!registry.isAuthorized(to, Actions.OWN_LOT)) revert PassportLib.LotPassport__InvalidRecipient(to);
+            if (!settlement && !registry.isAuthorized(to, Actions.OWN_LOT)) {
+                revert PassportLib.LotPassport__InvalidRecipient(to);
+            }
         }
 
         from = super._update(to, tokenId, auth);
@@ -541,6 +592,7 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
 
         delete _pendingCustody[tokenId];
         _lots[tokenId].custodian = receiver;
+        _trackCustody(tokenId, receiver);
         _record(tokenId, PassportLib.EventType.CustodyConfirmed, p.from, receiptHash, 0);
         emit PassportLib.CustodyChanged(tokenId, p.from, receiver);
     }
@@ -569,9 +621,10 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
     /**
      * @notice Uses input lots held by the calling processor or refinery to produce derived lots.
      * @dev The caller needs `PROCESS_LOTS`. Rules:
-     * - each input passed inspection, is not frozen or escrow-locked, has no pending custody, and is held by the
-     *   caller;
-     * - all inputs have the same owner, who becomes the owner of the outputs;
+     * - each input passed inspection, is not frozen or locked under a trade, has no pending custody, and is held by
+     *   the caller;
+     * - all inputs have the same owner, who becomes the owner of the outputs, and who consented: the caller is in
+     *   the owner's organisation, or was approved by the owner (ERC-721 approval) for each input;
      * - total output quantity <= total input quantity (no mass is created);
      * - inputs become Consumed; outputs start as Registered and need their own inspection.
      * Parent and child links are recorded for provenance.
@@ -600,8 +653,11 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
             }
             if (lot.custodian != refinery) revert PassportLib.LotPassport__NotCustodian(id, refinery);
             if (_ownerOf(id) != lotOwner) revert PassportLib.LotPassport__MixedOwnership(id);
+            if (!registry.sameOrg(refinery, lotOwner) && !_isAuthorized(lotOwner, refinery, id)) {
+                revert PassportLib.LotPassport__NoOwnerConsent(id, refinery);
+            }
             if (_pendingCustody[id].to != address(0)) revert PassportLib.LotPassport__CustodyPending(id);
-            if (escrowLocked[id]) revert PassportLib.LotPassport__LotLocked(id);
+            if (lockedBy[id] != address(0)) revert PassportLib.LotPassport__LotLocked(id);
             _requireNotFrozen(id);
             // Status becomes Consumed below, so a repeated id fails the status check above.
             inputTotal += lot.quantity;
@@ -669,7 +725,9 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
     }
 
     /**
-     * @notice Resolves a flag after human review. If `upheld`, the lot is also put on a regulatory hold.
+     * @notice Resolves a flag after human review. If `upheld`, the lot is also put on a regulatory hold; if
+     * dismissed, it counts against the reporter in {dismissedFlagsOf}, a public record regulators use to act on
+     * reporters who freeze lots without cause.
      * @dev The caller needs `REGULATE`.
      * @param flagId Open flag.
      * @param upheld True to uphold the flag, false to dismiss it.
@@ -688,6 +746,7 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
         f.status = upheld ? PassportLib.FlagStatus.Upheld : PassportLib.FlagStatus.Dismissed;
         _lots[tokenId].openFlags -= 1;
         if (upheld) _lots[tokenId].regulatorHold = true;
+        else dismissedFlagsOf[f.raisedBy] += 1;
 
         _record(tokenId, PassportLib.EventType.FlagResolved, f.raisedBy, resolutionHash, flagId);
         emit PassportLib.FlagResolved(flagId, tokenId, f.status, resolutionHash);
@@ -730,6 +789,21 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
      */
     function getLot(uint256 tokenId) external view lotExists(tokenId) returns (PassportLib.Lot memory) {
         return _lots[tokenId];
+    }
+
+    /**
+     * @inheritdoc ILotPassport
+     */
+    function escrowLocked(uint256 tokenId) external view returns (bool) {
+        return lockedBy[tokenId] != address(0);
+    }
+
+    /**
+     * @inheritdoc ILotPassport
+     */
+    function custodyReachedAt(uint256 tokenId, bytes32 orgId) external view returns (uint64) {
+        if (lockedBy[tokenId] == address(0) || orgId == bytes32(0)) return 0;
+        return _custodyReachedAt[_custodyKey(tokenId, orgId)];
     }
 
     /**
@@ -964,10 +1038,48 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
     }
 
     /**
-     * @dev Reverts unless the caller is the (non-zero) escrow.
+     * @dev Reverts unless the caller is the (non-zero) escrow or an approved locker.
+     * @return locker The caller.
      */
-    function _onlyEscrow() private view {
-        if (_msgSender() != escrow || escrow == address(0)) revert PassportLib.LotPassport__NotEscrow(_msgSender());
+    function _onlyLocker() private view returns (address locker) {
+        locker = _msgSender();
+        if ((locker != escrow || locker == address(0)) && !isLocker[locker]) {
+            revert PassportLib.LotPassport__NotEscrow(locker);
+        }
+    }
+
+    /**
+     * @dev Reverts unless the caller is the contract that locked `tokenId`.
+     * @param tokenId Lot.
+     */
+    function _onlyLockerOf(uint256 tokenId) private view {
+        address locker = lockedBy[tokenId];
+        if (locker == address(0)) revert PassportLib.LotPassport__NotLocked(tokenId);
+        if (_msgSender() != locker) revert PassportLib.LotPassport__NotEscrow(_msgSender());
+    }
+
+    /**
+     * @dev While a lot is locked under a trade, records the first time custody reaches `custodian`'s organisation,
+     * so a delivery stays proven even if the buyer passes the goods on before anyone confirms it.
+     * @param tokenId Lot.
+     * @param custodian New custodian.
+     */
+    function _trackCustody(uint256 tokenId, address custodian) private {
+        if (lockedBy[tokenId] == address(0)) return;
+        bytes32 orgId = registry.participant(custodian).orgId;
+        if (orgId == bytes32(0)) return;
+        bytes32 key = _custodyKey(tokenId, orgId);
+        if (_custodyReachedAt[key] == 0) _custodyReachedAt[key] = uint64(block.timestamp);
+    }
+
+    /**
+     * @dev Storage key of a custody record for the lot's current lock.
+     * @param tokenId Lot.
+     * @param orgId Organisation.
+     * @return The key.
+     */
+    function _custodyKey(uint256 tokenId, bytes32 orgId) private view returns (bytes32) {
+        return keccak256(abi.encode(tokenId, _lockNonce[tokenId], orgId));
     }
 
     /**

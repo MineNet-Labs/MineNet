@@ -5,9 +5,27 @@ pragma solidity ^0.8.34;
  * @title IInspectionRegistry
  * @author 0xEmmyb2
  * @notice What other MineNet contracts need from {InspectionRegistry}: which inspector the platform assigned to a
- * lot, and whether an inspector is deployed to a mine site's district.
+ * lot, whether that assignment is still open, and whether an inspector is deployed to a mine site's district.
  */
 interface IInspectionRegistry {
+    /**
+     * @notice Closes the open assignment of `inspector` to a lot once it submitted its pass / fail result.
+     * @dev Only the lot passport. Reverts unless the assignment is open.
+     * @param tokenId The lot.
+     * @param inspector The inspector that submitted the result.
+     * @custom:emits InspectionCompleted
+     */
+    function completeInspection(uint256 tokenId, address inspector) external;
+
+    /**
+     * @notice Whether `inspector` holds an open assignment for a lot: assigned, result not yet submitted, and
+     * within the inspection window.
+     * @param tokenId The lot.
+     * @param inspector The inspector.
+     * @return True if the assignment is open.
+     */
+    function isAssignmentOpen(uint256 tokenId, address inspector) external view returns (bool);
+
     /**
      * @notice The inspector the platform currently assigns to a lot.
      * @param tokenId The lot.

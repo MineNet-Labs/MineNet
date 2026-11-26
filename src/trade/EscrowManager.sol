@@ -79,6 +79,11 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
     uint8 public constant MAX_EVIDENCE_PER_SIDE = 10;
 
     /**
+     * @notice Time a buyer refunded after delivery has to bring the goods back to the seller.
+     */
+    uint32 public constant RETURN_WINDOW = 30 days;
+
+    /**
      * @notice Participant, role and permission registry.
      */
     IMineNetRegistry public immutable registry;
@@ -162,6 +167,13 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
      * @notice Balances owed to buyers, sellers and the treasury (pull pattern).
      */
     mapping(IERC20 token => mapping(address account => uint256)) public claimable;
+
+    /**
+     * @notice Where the seller wants the goods of an order `AwaitingReturn` sent back (e.g. its warehouse), for sellers
+     * whose own accounts do not hold custody (a miner's goods go back to a warehouse). Zero: the seller's own
+     * organisation.
+     */
+    mapping(uint256 orderId => address custodian) public returnTo;
 
     /**
      * @notice Restricts a function to {MineNetRegistry} admins.
@@ -297,6 +309,7 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
         }
         if (p.buyer == p.seller) revert EscrowLib.EscrowManager__SelfDealing();
         if (!registry.isAuthorized(p.buyer, Actions.BUY_LOT)) revert EscrowLib.EscrowManager__Unauthorized(p.buyer);
+        if (!registry.isAuthorized(p.seller, Actions.SELL_LOT)) revert EscrowLib.EscrowManager__Unauthorized(p.seller);
         if (passport.ownerOf(p.tokenId) != p.seller) {
             revert EscrowLib.EscrowManager__SellerNotOwner(p.tokenId, p.seller);
         }
@@ -318,6 +331,7 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
             createdAt: uint64(block.timestamp),
             deliveryDeadline: deadline,
             deliveredAt: 0,
+            returnDeadline: 0,
             status: EscrowLib.OrderStatus.Active,
             titlePending: false,
             termsHash: p.termsHash
@@ -335,8 +349,10 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Records delivery once the buyer holds custody of the lot on the passport.
-     * @dev Callable by anyone while the order is active or disputed; a no-op if already recorded.
+     * @notice Records delivery once custody of the lot reached the buyer's organisation on the passport.
+     * @dev Callable by anyone while the order is active or disputed; a no-op if already recorded. The delivery time
+     * is when custody first reached the buyer's organisation under this order, as the passport recorded it, so it
+     * stays proven even if the buyer has since passed the goods on (e.g. to a warehouse).
      * @param orderId Order id.
      * @custom:emits DeliveryConfirmed
      */
@@ -346,14 +362,15 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
             revert EscrowLib.EscrowManager__InvalidState(orderId, o.status);
         }
         if (o.deliveredAt != 0) return;
-        if (passport.custodianOf(o.tokenId) != o.buyer) revert EscrowLib.EscrowManager__NotDelivered(orderId);
-        o.deliveredAt = uint64(block.timestamp);
-        emit EscrowLib.DeliveryConfirmed(orderId, o.deliveredAt);
+        uint64 reachedAt = _reachedBuyerAt(o);
+        if (reachedAt == 0) revert EscrowLib.EscrowManager__NotDelivered(orderId);
+        o.deliveredAt = reachedAt;
+        emit EscrowLib.DeliveryConfirmed(orderId, reachedAt);
     }
 
     /**
      * @notice The buyer accepts delivery and releases payment without waiting for the dispute window.
-     * @dev Only the buyer, once it holds custody and the required certificates are still valid.
+     * @dev Only the buyer, once custody reached its organisation and the required certificates are still valid.
      * @param orderId Order id.
      * @custom:emits DeliveryConfirmed (if not yet recorded)
      * @custom:emits OrderSettled
@@ -370,14 +387,16 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
 
     /**
      * @notice Settles an order once the dispute window has passed since delivery.
-     * @dev Callable by anyone. The required certificates must still be valid.
+     * @dev Callable by anyone; records the delivery first if nobody did. The required certificates must still be
+     * valid.
      * @param orderId Order id.
+     * @custom:emits DeliveryConfirmed (if not yet recorded)
      * @custom:emits OrderSettled
      */
     function settle(uint256 orderId) external nonReentrant whenNotPaused {
         EscrowLib.Order storage o = _orders[orderId];
         _requireStatus(orderId, EscrowLib.OrderStatus.Active);
-        if (o.deliveredAt == 0) revert EscrowLib.EscrowManager__NotDelivered(orderId);
+        confirmDelivery(orderId);
         if (block.timestamp < uint256(o.deliveredAt) + o.disputeWindow) {
             revert EscrowLib.EscrowManager__DisputeWindowOpen(orderId);
         }
@@ -388,7 +407,8 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
 
     /**
      * @notice Refunds the buyer in full and unlocks the lot when it was not delivered by the deadline.
-     * @dev Only the buyer, after the deadline, while it does not hold custody.
+     * @dev Only the buyer, after the deadline, and only if custody never reached the buyer's organisation under this
+     * order (passing the goods on after receiving them does not count as non-delivery).
      * @param orderId Order id.
      * @custom:emits OrderRefunded
      */
@@ -397,7 +417,7 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
         if (msg.sender != o.buyer) revert EscrowLib.EscrowManager__Unauthorized(msg.sender);
         _requireStatus(orderId, EscrowLib.OrderStatus.Active);
         if (block.timestamp <= o.deliveryDeadline) revert EscrowLib.EscrowManager__DeadlineNotReached(orderId);
-        if (o.deliveredAt != 0 || passport.custodianOf(o.tokenId) == o.buyer) {
+        if (o.deliveredAt != 0 || _reachedBuyerAt(o) != 0) {
             revert EscrowLib.EscrowManager__InvalidState(orderId, o.status);
         }
         o.status = EscrowLib.OrderStatus.Refunded;
@@ -524,7 +544,10 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
     /**
      * @notice Judges a dispute once the evidence period is over and executes the verdict.
      * @dev Callable by anyone. Reverts while the verdict is `Pending` (no custody yet and the deadline has not
-     * passed).
+     * passed). A refund owed to a buyer who already received the goods is not paid at once: the order waits in
+     * `AwaitingReturn` until the goods are back with the seller ({completeReturn}); if the buyer keeps them past
+     * {RETURN_WINDOW}, the sale completes instead ({claimUnreturned}). A frozen lot cannot move (it is under the
+     * regulator's control), so its refund is paid at once.
      * @param orderId Order id.
      * @return verdict The verdict executed.
      * @custom:emits DisputeResolved
@@ -545,12 +568,83 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
         if (lotToBuyer && o.deliveredAt == 0) o.deliveredAt = uint64(block.timestamp);
 
         DisputeLib.Winner winner = DisputeLib.winnerOf(verdict, refund, o.amount);
-        o.status = EscrowLib.OrderStatus.Resolved;
         d.verdict = verdict;
         d.winner = winner;
         d.buyerRefund = refund;
+        if (!lotToBuyer && _reachedBuyerAt(o) != 0 && !_heldBySeller(o) && !passport.isFrozen(o.tokenId)) {
+            // goods with the buyer's side: the refund waits for their return
+            uint64 deadline = uint64(block.timestamp) + RETURN_WINDOW;
+            o.status = EscrowLib.OrderStatus.AwaitingReturn;
+            o.returnDeadline = deadline;
+            emit EscrowLib.DisputeResolved(orderId, verdict, winner, refund, 0, false);
+            emit EscrowLib.ReturnRequired(orderId, deadline);
+            return verdict;
+        }
+        o.status = EscrowLib.OrderStatus.Resolved;
         uint256 sellerAmount = _payout(orderId, refund, lotToBuyer, true);
         emit EscrowLib.DisputeResolved(orderId, verdict, winner, refund, sellerAmount, lotToBuyer);
+    }
+
+    /**
+     * @notice The seller names the custodian (e.g. its warehouse) the buyer must return the goods to.
+     * @dev Only the seller, while the order is `AwaitingReturn`. The custodian must be able to hold custody and must
+     * be outside the buyer's organisation.
+     * @param orderId Order id.
+     * @param custodian Return custodian.
+     * @custom:emits ReturnAddressSet
+     */
+    function setReturnAddress(uint256 orderId, address custodian) external {
+        EscrowLib.Order storage o = _orders[orderId];
+        if (msg.sender != o.seller) revert EscrowLib.EscrowManager__Unauthorized(msg.sender);
+        _requireStatus(orderId, EscrowLib.OrderStatus.AwaitingReturn);
+        if (!registry.isAuthorized(custodian, Actions.HOLD_CUSTODY) || registry.sameOrg(custodian, o.buyer)) {
+            revert EscrowLib.EscrowManager__Unauthorized(custodian);
+        }
+        returnTo[orderId] = custodian;
+        emit EscrowLib.ReturnAddressSet(orderId, custodian);
+    }
+
+    /**
+     * @notice Releases the buyer's refund once the goods of a refunded order are back with the seller.
+     * @dev Callable by anyone while the order is `AwaitingReturn` and the lot's custodian is in the seller's
+     * organisation or is the seller's return custodian ({setReturnAddress}), or the lot was frozen meanwhile (it is then under the regulator's control and cannot move). The
+     * lot is unlocked for the seller.
+     * @param orderId Order id.
+     * @custom:emits GoodsReturned
+     * @custom:emits OrderRefunded or OrderSettled
+     */
+    function completeReturn(uint256 orderId) external nonReentrant {
+        EscrowLib.Order storage o = _orders[orderId];
+        _requireStatus(orderId, EscrowLib.OrderStatus.AwaitingReturn);
+        if (!_returned(orderId, o) && !passport.isFrozen(o.tokenId)) {
+            revert EscrowLib.EscrowManager__NotReturned(orderId);
+        }
+        o.status = EscrowLib.OrderStatus.Resolved;
+        emit EscrowLib.GoodsReturned(orderId);
+        _payout(orderId, _disputes[orderId].buyerRefund, false, false);
+    }
+
+    /**
+     * @notice The buyer kept the goods past the return deadline: the sale completes as if no refund were due.
+     * @dev Callable by anyone after {RETURN_WINDOW}, while the goods are not back with the seller. The seller is
+     * paid in full and the title passes to the buyer (deferred while the lot is frozen).
+     * @param orderId Order id.
+     * @custom:emits ReturnDefaulted
+     * @custom:emits OrderSettled
+     */
+    function claimUnreturned(uint256 orderId) external nonReentrant {
+        EscrowLib.Order storage o = _orders[orderId];
+        _requireStatus(orderId, EscrowLib.OrderStatus.AwaitingReturn);
+        if (block.timestamp <= o.returnDeadline) {
+            revert EscrowLib.EscrowManager__ReturnWindowOpen(orderId, o.returnDeadline);
+        }
+        if (_returned(orderId, o) || passport.isFrozen(o.tokenId)) {
+            revert EscrowLib.EscrowManager__InvalidState(orderId, o.status);
+        }
+        o.status = EscrowLib.OrderStatus.Resolved;
+        _disputes[orderId].buyerRefund = 0;
+        emit EscrowLib.ReturnDefaulted(orderId);
+        _payout(orderId, 0, true, true);
     }
 
     /**
@@ -695,7 +789,7 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
         c.deliveryDeadline = o.deliveryDeadline;
         c.now_ = uint64(block.timestamp);
         c.sellerResponded = d.sellerResponded;
-        c.delivered = o.deliveredAt != 0 || passport.custodianOf(o.tokenId) == o.buyer;
+        c.delivered = o.deliveredAt != 0 || _reachedBuyerAt(o) != 0;
         c.certificatesValid = _certificatesValid(o.tokenId);
 
         uint256 nb;
@@ -737,8 +831,8 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
         uint256 sellerGross = o.amount - buyerRefund;
         uint256 fee = (sellerGross * o.feeBps) / 10_000;
         sellerAmount = sellerGross - fee;
-        if (buyerRefund != 0) claimable[o.paymentToken][o.buyer] += buyerRefund;
-        if (sellerAmount != 0) claimable[o.paymentToken][o.seller] += sellerAmount;
+        if (buyerRefund != 0) claimable[o.paymentToken][registry.payoutOf(o.buyer)] += buyerRefund;
+        if (sellerAmount != 0) claimable[o.paymentToken][registry.payoutOf(o.seller)] += sellerAmount;
         if (fee != 0) claimable[o.paymentToken][treasury] += fee;
 
         if (lotToBuyer && deferTitleIfFrozen && passport.isFrozen(o.tokenId)) {
@@ -763,6 +857,35 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
         _requireStatus(orderId, EscrowLib.OrderStatus.Disputed);
         d = _disputes[orderId];
         if (block.timestamp > d.evidenceDeadline) revert EscrowLib.EscrowManager__EvidencePeriodClosed(orderId);
+    }
+
+    /**
+     * @dev When custody of the order's lot first reached the buyer's organisation under this order (0 = never).
+     * @param o The order.
+     * @return The time.
+     */
+    function _reachedBuyerAt(EscrowLib.Order storage o) private view returns (uint64) {
+        return passport.custodyReachedAt(o.tokenId, registry.participant(o.buyer).orgId);
+    }
+
+    /**
+     * @dev Whether the order's lot is currently held by the seller's organisation.
+     * @param o The order.
+     * @return True if the custodian is in the seller's organisation.
+     */
+    function _heldBySeller(EscrowLib.Order storage o) private view returns (bool) {
+        return registry.sameOrg(passport.custodianOf(o.tokenId), o.seller);
+    }
+
+    /**
+     * @dev Whether the goods of an order are back: with the seller's organisation or its return custodian.
+     * @param orderId Order id.
+     * @param o The order.
+     * @return True if returned.
+     */
+    function _returned(uint256 orderId, EscrowLib.Order storage o) private view returns (bool) {
+        address custodian = returnTo[orderId];
+        return _heldBySeller(o) || (custodian != address(0) && passport.custodianOf(o.tokenId) == custodian);
     }
 
     /**

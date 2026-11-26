@@ -66,6 +66,29 @@ library RegistryLib {
     event ParticipantReinstated(address indexed account, address indexed by, bytes32 reasonHash);
 
     /**
+     * @notice Emitted when a regulator suspends a whole organisation.
+     * @param orgId The organisation.
+     * @param by The regulator.
+     * @param reasonHash Hash of the decision.
+     */
+    event OrgSuspended(bytes32 indexed orgId, address indexed by, bytes32 reasonHash);
+
+    /**
+     * @notice Emitted when a regulator lifts an organisation's suspension.
+     * @param orgId The organisation.
+     * @param by The regulator.
+     * @param reasonHash Hash of the decision.
+     */
+    event OrgReinstated(bytes32 indexed orgId, address indexed by, bytes32 reasonHash);
+
+    /**
+     * @notice Emitted when the admin sets the company account receiving an organisation's proceeds.
+     * @param orgId The organisation.
+     * @param payout The company account (zero = the trading account).
+     */
+    event OrgPayoutSet(bytes32 indexed orgId, address payout);
+
+    /**
      * @notice Emitted when a participant role is enabled or disabled.
      * @param role Role id.
      * @param enabled Whether the role can now be granted.
@@ -108,6 +131,12 @@ library RegistryLib {
      * @param account The account.
      */
     error MineNetRegistry__AlreadySuspended(address account);
+
+    /**
+     * @notice Organisation `orgId` is unknown, or not in the state the call needs.
+     * @param orgId The organisation.
+     */
+    error MineNetRegistry__InvalidOrg(bytes32 orgId);
 
     /**
      * @notice A caller cannot suspend itself.

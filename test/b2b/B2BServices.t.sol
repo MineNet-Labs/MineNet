@@ -163,6 +163,8 @@ contract B2BServicesTest is MineNetFixture {
 
         PassportLib.LotOutput[] memory outs = new PassportLib.LotOutput[](1);
         outs[0] = PassportLib.LotOutput(keccak256("concentrate-1"), TIN, 900_000, H);
+        vm.prank(miner); // the owner consents to toll processing
+        passport.approve(processor, lot);
         vm.prank(processor);
         passport.processLots(_one(lot), outs, keccak256("yield-report"));
 
@@ -202,6 +204,12 @@ contract B2BServicesTest is MineNetFixture {
         uint256 id = _active(warehouse, t);
         _fund(id, 0);
 
+        uint64 due = services.dueAt(id, 0); // self-declared work is billable from the job's date
+        vm.prank(warehouse);
+        vm.expectRevert(abi.encodeWithSelector(B2BLib.B2B__TooEarly.selector, 0, due));
+        services.claimJob(id, 0, none, none, 10, H);
+        vm.warp(due);
+
         vm.prank(warehouse);
         vm.expectRevert(abi.encodeWithSelector(ServicesLib.B2BServices__InvalidWork.selector, 1));
         services.claimJob(id, 0, _one(1), none, 10, H); // claimed kinds take no references
@@ -232,12 +240,14 @@ contract B2BServicesTest is MineNetFixture {
         t.arbiter = arbiter;
         uint256 id = _active(auditor, t);
         _fund(id, 0);
+        uint64 due = services.dueAt(id, 0);
+        vm.warp(due);
         vm.prank(auditor);
         services.claimJob(id, 0, none, none, 10, H);
         vm.prank(miner);
         services.disputeJob(id, 0, H);
 
-        uint64 until = uint64(block.timestamp + 14 days);
+        uint64 until = due + 14 days;
         vm.prank(arbiter);
         vm.expectRevert(abi.encodeWithSelector(B2BLib.B2B__NegotiationPeriod.selector, until));
         services.arbitrate(id, 0, 500e6, H);
@@ -299,6 +309,7 @@ contract B2BServicesTest is MineNetFixture {
         ServicesLib.Terms memory t = _terms(ServicesLib.ServiceKind.Labour, 15_000, 100); // RWF per shift
         t.paymentToken = IERC20(address(0));
         uint256 id = _active(processor, t);
+        vm.warp(services.dueAt(id, 0));
         vm.prank(processor);
         services.claimJob(id, 0, none, none, 80, keccak256("attendance"));
         vm.prank(miner);

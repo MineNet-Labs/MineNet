@@ -37,6 +37,14 @@ interface IMineNetRegistry is IAccessControl {
     function isActive(address account, bytes32 role) external view returns (bool);
 
     /**
+     * @notice The account that receives trade proceeds and refunds owed to `account`: its organisation's company
+     * payout account if the admin set one, otherwise `account` itself.
+     * @param account The trading account.
+     * @return The payout account.
+     */
+    function payoutOf(address account) external view returns (address);
+
+    /**
      * @notice Whether two accounts belong to the same organisation.
      * @param a First account.
      * @param b Second account.

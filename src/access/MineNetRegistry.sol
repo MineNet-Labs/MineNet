@@ -60,6 +60,17 @@ contract MineNetRegistry is AccessControlDefaultAdminRules, IMineNetRegistry {
     mapping(bytes32 orgId => bool) public orgRegistered;
 
     /**
+     * @notice Organisations suspended as a whole: every account of the company is blocked, not just one.
+     */
+    mapping(bytes32 orgId => bool) public orgSuspended;
+
+    /**
+     * @notice The company account that receives the organisation's trade proceeds and refunds (zero = paid to the
+     * account that is party to the trade).
+     */
+    mapping(bytes32 orgId => address) public orgPayout;
+
+    /**
      * @dev Request key (`keccak256(account, role)`) => role request.
      */
     mapping(bytes32 key => RegistryLib.RoleRequest) private _requests;
@@ -366,6 +377,49 @@ contract MineNetRegistry is AccessControlDefaultAdminRules, IMineNetRegistry {
     }
 
     /**
+     * @notice Suspends a whole organisation: every one of its accounts is blocked from every action at once.
+     * @dev Only a regulator, and not on its own organisation.
+     * @param orgId Organisation to suspend.
+     * @param reasonHash Hash of the suspension decision.
+     * @custom:emits OrgSuspended
+     */
+    function suspendOrg(bytes32 orgId, bytes32 reasonHash) external {
+        _onlyRegulator();
+        if (orgId == _participants[_msgSender()].orgId) revert RegistryLib.MineNetRegistry__CannotSuspendSelf();
+        if (!orgRegistered[orgId] || orgSuspended[orgId]) revert RegistryLib.MineNetRegistry__InvalidOrg(orgId);
+        orgSuspended[orgId] = true;
+        emit RegistryLib.OrgSuspended(orgId, _msgSender(), reasonHash);
+    }
+
+    /**
+     * @notice Lifts an organisation's suspension (accounts suspended individually stay suspended).
+     * @dev Only a regulator.
+     * @param orgId Organisation to reinstate.
+     * @param reasonHash Hash of the reinstatement decision.
+     * @custom:emits OrgReinstated
+     */
+    function reinstateOrg(bytes32 orgId, bytes32 reasonHash) external {
+        _onlyRegulator();
+        if (!orgSuspended[orgId]) revert RegistryLib.MineNetRegistry__InvalidOrg(orgId);
+        orgSuspended[orgId] = false;
+        emit RegistryLib.OrgReinstated(orgId, _msgSender(), reasonHash);
+    }
+
+    /**
+     * @notice Sets the company account that receives an organisation's trade proceeds and refunds.
+     * @dev Only the admin (from the company's verified banking / treasury details), so no single employee can
+     * redirect the company's money. Zero pays the account that is party to each trade.
+     * @param orgId Organisation.
+     * @param payout Company account.
+     * @custom:emits OrgPayoutSet
+     */
+    function setOrgPayout(bytes32 orgId, address payout) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (!orgRegistered[orgId]) revert RegistryLib.MineNetRegistry__InvalidOrg(orgId);
+        orgPayout[orgId] = payout;
+        emit RegistryLib.OrgPayoutSet(orgId, payout);
+    }
+
+    /**
      * @notice Reinstates a suspended account.
      * @dev Only a regulator.
      * @param account Account to reinstate.
@@ -419,6 +473,14 @@ contract MineNetRegistry is AccessControlDefaultAdminRules, IMineNetRegistry {
      */
     function isActive(address account, bytes32 role) public view returns (bool) {
         return hasRole(role, account) && _participantRoles.contains(role) && _inGoodStanding(account);
+    }
+
+    /**
+     * @inheritdoc IMineNetRegistry
+     */
+    function payoutOf(address account) external view returns (address) {
+        address payout = orgPayout[_participants[account].orgId];
+        return payout == address(0) ? account : payout;
     }
 
     /**
@@ -524,7 +586,7 @@ contract MineNetRegistry is AccessControlDefaultAdminRules, IMineNetRegistry {
      */
     function _inGoodStanding(address account) private view returns (bool) {
         RegistryLib.Participant storage p = _participants[account];
-        return !p.suspended && (p.licenceExpiry == 0 || p.licenceExpiry >= block.timestamp);
+        return !p.suspended && !orgSuspended[p.orgId] && (p.licenceExpiry == 0 || p.licenceExpiry >= block.timestamp);
     }
 
     /**

@@ -59,6 +59,8 @@ library InspectionLib {
      * @param dueBy Deadline for the inspection; after it the lot can be reassigned.
      * @param round Number of assignments made for the lot so far.
      * @param coverage Coverage key the inspector was drawn from (a district key or {NATIONAL}).
+     * @param completed Whether the inspector submitted its result.
+     * @param closed Whether the assignment is closed (result submitted, declined, or replaced after its window).
      */
     struct Assignment {
         address inspector;
@@ -67,6 +69,40 @@ library InspectionLib {
         uint64 dueBy;
         uint32 round;
         bytes32 coverage;
+        bool completed;
+        bool closed;
+    }
+
+    /**
+     * @notice A random draw requested from Chainlink VRF and not yet fulfilled.
+     * @param requestId VRF request id (zero = none).
+     * @param requestedBy Account that requested the inspection.
+     * @param requestedAt When the draw was requested.
+     * @param excluded Inspector that may not be drawn (the one that declined or let its window lapse).
+     */
+    struct PendingDraw {
+        uint256 requestId;
+        address requestedBy;
+        uint64 requestedAt;
+        address excluded;
+    }
+
+    /**
+     * @notice Chainlink VRF v2.5 settings. A zero coordinator means the on-chain fallback (`block.prevrandao`).
+     * @param coordinator VRF coordinator.
+     * @param keyHash Gas lane key hash.
+     * @param subId Funded VRF subscription id.
+     * @param confirmations Block confirmations before fulfilment.
+     * @param callbackGasLimit Gas for the fulfilment callback.
+     * @param nativePayment Whether the subscription pays in the native token rather than LINK.
+     */
+    struct VrfConfig {
+        address coordinator;
+        bytes32 keyHash;
+        uint256 subId;
+        uint16 confirmations;
+        uint32 callbackGasLimit;
+        bool nativePayment;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -132,6 +168,37 @@ library InspectionLib {
      * @param reasonHash Hash of the reason.
      */
     event InspectionDeclined(uint256 indexed tokenId, address indexed inspector, bytes32 reasonHash);
+
+    /**
+     * @notice Emitted when an inspector submits its result, closing the assignment.
+     * @param tokenId The lot.
+     * @param inspector The inspector.
+     * @param round Assignment round.
+     */
+    event InspectionCompleted(uint256 indexed tokenId, address indexed inspector, uint32 round);
+
+    /**
+     * @notice Emitted when a random draw is requested from Chainlink VRF.
+     * @param tokenId The lot.
+     * @param requestId VRF request id.
+     * @param requestedBy Requesting account.
+     */
+    event DrawRequested(uint256 indexed tokenId, uint256 indexed requestId, address indexed requestedBy);
+
+    /**
+     * @notice Emitted when a VRF draw found no eligible inspector; the lot can be requested again.
+     * @param tokenId The lot.
+     * @param requestId VRF request id.
+     */
+    event DrawFailed(uint256 indexed tokenId, uint256 indexed requestId);
+
+    /**
+     * @notice Emitted when the registry admin sets the Chainlink VRF settings.
+     * @param coordinator VRF coordinator (zero = on-chain fallback).
+     * @param keyHash Gas lane key hash.
+     * @param subId Subscription id.
+     */
+    event VrfConfigSet(address indexed coordinator, bytes32 keyHash, uint256 subId);
 
     /**
      * @notice Emitted when the regulator sets the inspection deadline.
@@ -204,6 +271,41 @@ library InspectionLib {
      * @notice The inspection window is outside the allowed range.
      */
     error InspectionRegistry__InvalidWindow();
+
+    /**
+     * @notice Lot `tokenId` failed inspection: only a regulator may order a re-inspection.
+     * @param tokenId The lot.
+     */
+    error InspectionRegistry__ReinspectionNeedsRegulator(uint256 tokenId);
+
+    /**
+     * @notice A random draw for lot `tokenId` is still awaiting Chainlink VRF.
+     * @param tokenId The lot.
+     */
+    error InspectionRegistry__DrawPending(uint256 tokenId);
+
+    /**
+     * @notice `account` is not the lot passport (only it reports completed inspections).
+     * @param account The account.
+     */
+    error InspectionRegistry__NotPassport(address account);
+
+    /**
+     * @notice `account` is not the configured VRF coordinator.
+     * @param account The account.
+     */
+    error InspectionRegistry__NotCoordinator(address account);
+
+    /**
+     * @notice `account` is not a registry admin.
+     * @param account The account.
+     */
+    error InspectionRegistry__NotRegistryAdmin(address account);
+
+    /**
+     * @notice The VRF settings are incomplete.
+     */
+    error InspectionRegistry__InvalidVrfConfig();
 
     /*//////////////////////////////////////////////////////////////
                                  HELPERS

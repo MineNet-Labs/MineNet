@@ -162,6 +162,7 @@ contract B2BFlowFuzzTest is MineNetFixture {
         uint256 budget = services.budgetOf(id);
 
         uint256[] memory none;
+        vm.warp(services.dueAt(id, 0));
         vm.prank(auditor);
         services.claimJob(id, 0, none, none, claimed, keccak256("timesheet"));
         vm.prank(miner);

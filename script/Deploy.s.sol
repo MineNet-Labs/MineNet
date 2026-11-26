@@ -76,6 +76,7 @@ contract Deploy is Script {
         bool wired = broadcaster == admin;
         if (wired) {
             passport.setEscrow(address(escrow));
+            passport.setLocker(address(b2b), true); // B2B locks dispatched lots until the delivery ends
             passport.setModule(address(supplyChain), true);
             passport.setModule(address(delivery), true);
             supplyChain.setModule(address(delivery), true);
@@ -118,7 +119,7 @@ contract Deploy is Script {
 
         if (!wired) {
             console.log("\nAdmin must run:");
-            console.log("  passport.setEscrow(escrow)");
+            console.log("  passport.setEscrow(escrow); passport.setLocker(b2b, true)");
             console.log("  passport.setModule(supplyChain, true); passport.setModule(delivery, true)");
             console.log("  supplyChain.setModule(delivery, true)");
             console.log("  passport.setModule(tags, true); passport.setModule(tracker, true)");
@@ -131,6 +132,13 @@ contract Deploy is Script {
             console.log("  certs.configureCertType(<type>, <issuer role>)  // e.g. EXPORT_PERMIT -> REGULATOR");
             console.log("  registry.setRoleAuthority(<role>, <regulator org>)  // e.g. MINER -> RMB, CUSTOMS -> RRA");
         }
+        console.log("\nProduction hardening:");
+        console.log(
+            "  supplyChain.setCustomsAuthority(<RRA org>)  // only RRA's system oracle may release from customs"
+        );
+        console.log("  inspections.setVrfConfig({coordinator, keyHash, subId, ...})  // Chainlink VRF v2.5 on Base;");
+        console.log("    then add the InspectionRegistry as a consumer of the VRF subscription");
+        console.log("  registry.setOrgPayout(<org>, <company treasury>)  // per company, from verified details");
         console.log("\nLicensing and oversight (needed before lots can be inspected or companies audited):");
         console.log("  registry.setRoleAuthority(INSPECTOR, <RMB org>); RMB regulators then call");
         console.log(

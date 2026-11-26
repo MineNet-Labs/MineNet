@@ -57,7 +57,8 @@ import {B2BLogic} from "src/b2b/libraries/B2BLogic.sol";
  * 5. Problems: a lot flagged before arrival lets the buyer refuse the delivery at once (the transporter is
  *    paid if it picked the lots up). An arrived delivery can be rejected within the review period (or later if
  *    a lot is flagged or below grade), opening a dispute the parties settle with matching offers, or that the
- *    agreed arbiter decides after {NEGOTIATION_PERIOD}. A delivery not made {REFUND_GRACE} after its due date
+ *    agreed arbiter decides after {NEGOTIATION_PERIOD} (the platform decides if there is no arbiter or the arbiter
+ *    has not ruled 30 days later, so escrow never stays locked). A delivery not made {REFUND_GRACE} after its due date
  *    is refunded as missed; the seller may also give one up early.
  *
  * ## Ending
@@ -702,7 +703,9 @@ contract B2B is ReentrancyGuardTransient, Pausable, IB2B {
 
     /**
      * @notice The arbiter named in the agreement decides a dispute the parties could not settle.
-     * @dev Only the agreement's arbiter, after {NEGOTIATION_PERIOD} from the rejection.
+     * @dev The agreement's arbiter, after {NEGOTIATION_PERIOD} from the rejection. When no arbiter was agreed, or
+     * the arbiter has not ruled within {B2BLib.ARBITRATION_PERIOD} after that, the platform (a registry admin)
+     * decides instead, so a dispute can never lock the escrow forever.
      * @param agreementId Agreement id.
      * @param index Disputed delivery.
      * @param goodsAmount Amount awarded to the seller; at most the price of the delivered weight. The rest of
@@ -715,11 +718,9 @@ contract B2B is ReentrancyGuardTransient, Pausable, IB2B {
         nonReentrant
     {
         B2BLib.Agreement storage a = _requireStatus(agreementId, B2BLib.AgreementStatus.Active);
-        if (a.arbiter == address(0) || msg.sender != a.arbiter) revert B2BLib.B2B__NotArbiter(msg.sender);
         B2BLib.Delivery storage d = _delivery(agreementId, a, index);
         _requireDeliveryStatus(index, d, B2BLib.DeliveryStatus.Disputed);
-        uint64 until = _disputes[agreementId][index].openedAt + NEGOTIATION_PERIOD;
-        if (block.timestamp <= until) revert B2BLib.B2B__NegotiationPeriod(until);
+        B2BLogic.requireArbiter(a.arbiter, _disputes[agreementId][index].openedAt, NEGOTIATION_PERIOD, registry);
         uint256 payable_ = _payable(a, d);
         if (goodsAmount > payable_) revert B2BLib.B2B__InvalidSettlement(goodsAmount, payable_);
         _settle(agreementId, a, index, d, goodsAmount, msg.sender, awardHash);
@@ -1132,15 +1133,12 @@ contract B2B is ReentrancyGuardTransient, Pausable, IB2B {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev Frees a delivery's lots so they can fill another delivery.
+     * @dev Frees a delivery's lots so they can fill another delivery, unlocking any lot whose title did not pass.
      * @param agreementId Agreement id.
      * @param index Delivery index.
      */
     function _releaseLots(uint256 agreementId, uint256 index) private {
-        uint256[] storage lots = _lots[agreementId][index];
-        for (uint256 i; i < lots.length; ++i) {
-            lotCommitted[lots[i]] = false;
-        }
+        B2BLogic.releaseLots(_lots[agreementId][index], lotCommitted, passport);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1180,8 +1178,9 @@ contract B2B is ReentrancyGuardTransient, Pausable, IB2B {
         a.progress.accepted += 1;
         _payParties(a, goodsPaid, refund, d.feeFunded);
         _recordSupplied(a, d, true);
-        _releaseLots(agreementId, index); // effects before the external title transfer (CEI)
+        // title first: the passport lock under B2B is what guarantees the transfer; release then unlocks the rest
         B2BLogic.transferTitle(a, _lots[agreementId][index], _deps());
+        _releaseLots(agreementId, index);
         emit B2BLib.DeliveryAccepted(agreementId, index, goodsPaid, refund, d.feeFunded, automatic);
         _completeIfDone(agreementId, a);
     }
@@ -1213,8 +1212,8 @@ contract B2B is ReentrancyGuardTransient, Pausable, IB2B {
         a.progress.settled += 1;
         _payParties(a, goodsPaid, refund, d.feeFunded);
         _recordSupplied(a, d, title);
-        _releaseLots(agreementId, index); // effects before the external title transfer (CEI)
         if (title) B2BLogic.transferTitle(a, _lots[agreementId][index], _deps());
+        _releaseLots(agreementId, index);
         emit B2BLib.DeliverySettled(agreementId, index, goodsPaid, refund, title, arbiter, awardHash);
         _completeIfDone(agreementId, a);
     }
@@ -1253,15 +1252,15 @@ contract B2B is ReentrancyGuardTransient, Pausable, IB2B {
     }
 
     /**
-     * @dev Credits `amount` of the agreement's token to `account`. No-op for off-chain agreements and zero
-     * amounts.
+     * @dev Credits `amount` of the agreement's token to `account`'s payout account (its company's, if the admin set
+     * one: {MineNetRegistry-payoutOf}). No-op for off-chain agreements and zero amounts.
      * @param a The agreement.
      * @param account Account to credit.
      * @param amount Amount.
      */
     function _credit(B2BLib.Agreement storage a, address account, uint256 amount) private {
         if (amount == 0 || address(a.paymentToken) == address(0)) return;
-        claimable[a.paymentToken][account] += amount;
+        claimable[a.paymentToken][registry.payoutOf(account)] += amount;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1345,7 +1344,8 @@ contract B2B is ReentrancyGuardTransient, Pausable, IB2B {
     }
 
     /**
-     * @dev The side `account` acts for, by organisation.
+     * @dev The side `account` acts for, by organisation. The account must itself be authorised to enter agreements
+     * (in good standing, licensed, with a trading role): any other employee of the company cannot act for it.
      * @param agreementId Agreement id (for the error).
      * @param a The agreement.
      * @param account The account.
@@ -1357,7 +1357,7 @@ contract B2B is ReentrancyGuardTransient, Pausable, IB2B {
         returns (B2BLib.Side)
     {
         bytes32 orgId = registry.participant(account).orgId;
-        if (orgId != bytes32(0)) {
+        if (orgId != bytes32(0) && registry.isAuthorized(account, Actions.ENTER_AGREEMENT)) {
             if (orgId == a.proposer.orgId) return B2BLib.Side.Proposer;
             if (orgId == a.counterparty.orgId) return B2BLib.Side.Counterparty;
         }

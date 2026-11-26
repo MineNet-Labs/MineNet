@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {MineNetRegistry} from "src/access/MineNetRegistry.sol";
 import {LotPassport} from "src/traceability/LotPassport.sol";
+import {PassportLib} from "src/traceability/libraries/PassportLib.sol";
 import {CertificateRegistry} from "src/compliance/CertificateRegistry.sol";
 import {EscrowManager} from "src/trade/EscrowManager.sol";
 import {DeliveryManager} from "src/traceability/DeliveryManager.sol";
@@ -151,6 +152,7 @@ abstract contract MineNetFixture is Test {
         registry.onboard(customs, Roles.CUSTOMS, "org-customs", H, exp);
 
         passport.setEscrow(address(escrow));
+        passport.setLocker(address(b2b), true);
         passport.setModule(address(supplyChain), true);
         passport.setModule(address(delivery), true);
         supplyChain.setModule(address(delivery), true);
@@ -186,6 +188,7 @@ abstract contract MineNetFixture is Test {
         vm.startPrank(admin);
         registry.setRoleAuthority(Roles.INSPECTOR, "org-rmb");
         supplyChain.setInspectionAssigner(address(inspections));
+        supplyChain.setCustomsAuthority("org-oracle");
         passport.setInspectionRegistry(inspections);
         sites.setInspectionRegistry(inspections);
         vm.stopPrank();
@@ -245,9 +248,10 @@ abstract contract MineNetFixture is Test {
     /// inspector drawn declines until `who` is assigned (it must be on the roster and eligible).
     function _assignTo(uint256 id, address who) internal {
         address current = inspections.assignedInspector(id);
-        if (current == address(0)) {
-            address lotOwner = passport.ownerOf(id);
-            vm.prank(lotOwner);
+        if (!inspections.isAssignmentOpen(id, current)) {
+            // a new round: the owner requests it (a regulator orders it for a lot that failed inspection)
+            bool rejected = passport.getLot(id).status == PassportLib.LotStatus.Rejected;
+            vm.prank(rejected ? regulator : passport.ownerOf(id));
             current = inspections.requestInspection(id);
         }
         for (uint256 i; current != who && i < 8; ++i) {

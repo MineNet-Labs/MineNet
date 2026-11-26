@@ -60,3 +60,14 @@ enables them at deployment, and disabling a module revokes these powers at once.
   the same company is not independent.
 - Pickup and arrival checkpoints can only be recorded through `DeliveryManager`, as part of a two-party handover.
 - Only hashes go on-chain: documents, photos and reports stay encrypted off-chain.
+- **Trade locks.** `lockedBy` records which trade contract (escrow or an approved locker such as `B2B`) holds a
+  lot; only that contract can transfer or unlock it. While locked, the passport records the first time custody
+  reaches each organisation (`custodyReachedAt`), which is how escrow and B2B prove delivery.
+- **Inspections.** Results come only from the inspector holding the lot's open assignment, which closes on
+  submission; a later failure of an inspected lot raises a flag instead of rejecting it.
+- **Processing needs consent.** `processLots` requires the processor to be in the owner's organisation or
+  approved by the owner for each input.
+- **Customs release** is recorded only by a regulator or an oracle of the customs authority
+  (`setCustomsAuthority`, e.g. the RRA system link).
+- **Frivolous flags.** Auditors flagging a lot must be independent of its owner and custodian, and every flag a
+  regulator dismisses is counted against its reporter (`dismissedFlagsOf`).

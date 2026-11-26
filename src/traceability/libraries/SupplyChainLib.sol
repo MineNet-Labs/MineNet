@@ -228,6 +228,12 @@ library SupplyChainLib {
     event ModuleSet(address indexed module, bool enabled);
 
     /**
+     * @notice Emitted when the customs authority whose oracles may release goods is set.
+     * @param orgId The customs authority's organisation.
+     */
+    event CustomsAuthoritySet(bytes32 indexed orgId);
+
+    /**
      * @notice Emitted when the admin sets the contract that assigns inspectors to lots ({InspectionRegistry}).
      * @param assigner The inspection assigner (zero = owners assign inspectors, legacy mode).
      */

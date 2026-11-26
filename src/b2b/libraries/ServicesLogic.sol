@@ -186,6 +186,9 @@ library ServicesLogic {
         ServicesLib.ServiceKind kind = a.service.kind;
         if (ServicesLib.isClaimed(kind)) {
             if (refs.length != 0) revert ServicesLib.B2BServices__InvalidWork(refs.length);
+            // self-declared work can only be billed once the job's scheduled date has come
+            uint64 starts = uint64(a.activatedAt + uint256(a.service.firstJobOffset) + index * a.service.jobInterval);
+            if (block.timestamp < starts) revert B2BLib.B2B__TooEarly(index, starts);
             return claimedUnits;
         }
         bytes32 providerOrg = _party(a, a.service.provider).orgId;
@@ -376,5 +379,25 @@ library ServicesLogic {
      */
     function _party(ServicesLib.Agreement storage a, B2BLib.Side side) private view returns (B2BLib.Party storage) {
         return side == B2BLib.Side.Proposer ? a.proposer : a.counterparty;
+    }
+
+    /**
+     * @notice Reverts unless the caller may decide a dispute opened at `openedAt`: the agreed arbiter after
+     * `negotiation`, or the platform (registry admin) when no arbiter was agreed or the arbiter has not ruled
+     * within {B2BLib.ARBITRATION_PERIOD} after that.
+     * @param arbiter The agreed arbiter (zero = none).
+     * @param openedAt When the dispute was opened.
+     * @param negotiation Time the parties have to settle first.
+     * @param registry Participant registry.
+     */
+    function requireArbiter(address arbiter, uint64 openedAt, uint64 negotiation, IMineNetRegistry registry)
+        public
+        view
+    {
+        uint64 until = openedAt + negotiation;
+        if (block.timestamp <= until) revert B2BLib.B2B__NegotiationPeriod(until);
+        if (arbiter != address(0) && msg.sender == arbiter) return;
+        bool arbiterLapsed = arbiter == address(0) || block.timestamp > until + B2BLib.ARBITRATION_PERIOD;
+        if (!arbiterLapsed || !registry.isAdmin(msg.sender)) revert B2BLib.B2B__NotArbiter(msg.sender);
     }
 }

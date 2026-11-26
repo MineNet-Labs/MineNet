@@ -125,3 +125,14 @@ Mechanism:
 - Site locations are public on purpose (lot origin must be verifiable). Detailed surveys stay off-chain as hashes.
 - Company staff (via `IStaffDirectory`) can manage sites, record safety measures and declare reserves only within
   their assigned permissions and sites.
+- **Inspection results are final.** An assignment closes when the inspector submits its result: it cannot
+  inspect the lot again or revise the result. A lot that failed inspection is re-inspected only on a regulator's
+  order (no inspector shopping). A later failed inspection of an inspected lot raises a flag for the regulator
+  rather than flipping the lot's status under a trade in progress.
+- **Verifiable randomness.** With `setVrfConfig` (Chainlink VRF v2.5) every inspector draw uses VRF output and is
+  made on fulfilment; without it the registry falls back to `block.prevrandao`, which is predictable on Base:
+  configure VRF for production.
+- **Audits cannot stall.** Fieldwork has `FIELDWORK_LIMIT` (180 days) and review `REVIEW_LIMIT` (90 days), after
+  which the company, the firm or the accreditation body closes the engagement (`lapseAudit`). Accreditation and
+  conflicts of interest are re-checked when the firm accepts and when it reports. A buyer's audit request only
+  occupies the company's slot once the company consents.
