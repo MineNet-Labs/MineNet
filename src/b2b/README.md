@@ -88,3 +88,17 @@ can request a one-off change to its quantity, price or due date, which the other
 - Payouts use the pull pattern (`withdraw`). Only settlement tokens approved in `CurrencyManager` are accepted.
 - Arbiters and transporters must be neutral: outside both parties' organisations. Inspectors are never chosen by
   the parties: the platform assigns them.
+- **Dispatched lots are locked.** `dispatchDelivery` locks every lot on the passport under `B2B`: until the
+  delivery ends the seller cannot sell it on the marketplace, transfer it, process it, or block the buyer's title
+  by revoking its approval. Title passes with `escrowTransfer`; lots of a delivery that does not complete are
+  unlocked.
+- **Arrival comes from the custody record.** A delivery has arrived once custody reached the buyer's
+  organisation during the lock (`LotPassport.custodyReachedAt`), so a buyer who passes the goods on cannot make
+  the delivery look missed.
+- **Disputes always end.** After the 14-day negotiation the agreed arbiter decides; if there is no arbiter, or it
+  has not ruled 30 days later (`ARBITRATION_PERIOD`), the platform (registry admin) decides, so escrow is never
+  locked forever.
+- **Only authorised accounts act for a company.** Every party action requires `ENTER_AGREEMENT` (licensed, in
+  good standing, trading role); other employees of the company cannot accept, reject or settle for it.
+- **Self-declared services.** Claimed kinds (security, consulting, labour...) can only be billed from the job's
+  scheduled date.

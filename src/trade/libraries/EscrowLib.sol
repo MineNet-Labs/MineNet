@@ -21,7 +21,8 @@ library EscrowLib {
         Disputed,
         Settled, // seller paid, lot transferred
         Refunded, // non-delivery refund
-        Resolved // dispute judged
+        Resolved, // dispute judged
+        AwaitingReturn // refund judged after delivery: released once the goods are back with the seller
     }
 
     /**
@@ -37,7 +38,8 @@ library EscrowLib {
      * @param disputeWindow Seconds after delivery in which the buyer can dispute.
      * @param createdAt When the order was opened.
      * @param deliveryDeadline Deadline for delivery; after it the buyer can claim a refund.
-     * @param deliveredAt When delivery was confirmed (0 = not yet).
+     * @param deliveredAt When the goods reached the buyer's organisation, once confirmed (0 = not yet).
+     * @param returnDeadline While `AwaitingReturn`: when the buyer must have returned the goods by.
      * @param status Current status.
      * @param titlePending Judged "lot to buyer" while the lot was frozen: the transfer completes once it unfreezes.
      * @param termsHash Hash of the sale terms.
@@ -55,6 +57,7 @@ library EscrowLib {
         uint64 createdAt;
         uint64 deliveryDeadline;
         uint64 deliveredAt;
+        uint64 returnDeadline;
         OrderStatus status;
         bool titlePending;
         bytes32 termsHash;
@@ -247,6 +250,32 @@ library EscrowLib {
     event TitleFinalized(uint256 indexed orderId, uint256 indexed tokenId);
 
     /**
+     * @notice Emitted when a dispute refunds a buyer who already holds the goods: the refund waits for their return.
+     * @param orderId Order id.
+     * @param returnDeadline When the goods must be back with the seller.
+     */
+    event ReturnRequired(uint256 indexed orderId, uint64 returnDeadline);
+
+    /**
+     * @notice Emitted when the goods are back with the seller and the buyer's refund is released.
+     * @param orderId Order id.
+     */
+    event GoodsReturned(uint256 indexed orderId);
+
+    /**
+     * @notice Emitted when the seller names the custodian the goods must be returned to.
+     * @param orderId Order id.
+     * @param custodian Return custodian.
+     */
+    event ReturnAddressSet(uint256 indexed orderId, address indexed custodian);
+
+    /**
+     * @notice Emitted when the buyer kept the goods past the return deadline: the sale completes instead.
+     * @param orderId Order id.
+     */
+    event ReturnDefaulted(uint256 indexed orderId);
+
+    /**
      * @notice Emitted when an account withdraws its credited balance.
      * @param token Settlement token.
      * @param account Withdrawing account.
@@ -428,6 +457,19 @@ library EscrowLib {
      * @param orderId The order.
      */
     error EscrowManager__TitleNotPending(uint256 orderId);
+
+    /**
+     * @notice The goods of order `orderId` are not back with the seller's organisation.
+     * @param orderId The order.
+     */
+    error EscrowManager__NotReturned(uint256 orderId);
+
+    /**
+     * @notice The buyer still has until `deadline` to return the goods of order `orderId`.
+     * @param orderId The order.
+     * @param deadline Return deadline.
+     */
+    error EscrowManager__ReturnWindowOpen(uint256 orderId, uint64 deadline);
 
     /**
      * @notice Order `orderId` has already been disputed.

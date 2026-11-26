@@ -59,6 +59,8 @@ contract LotPassportTest is Test {
         sites = new MineSiteRegistry(registry, licences);
         passport.setSiteRegistry(sites);
         vm.stopPrank();
+        vm.prank(miner); // the miner consents to the refinery toll-processing its lots
+        passport.setApprovalForAll(refinery, true);
 
         // the miner's licence, concession and an active site (lots are registered from it)
         vm.startPrank(regulator);
@@ -209,11 +211,19 @@ contract LotPassportTest is Test {
     }
 
     function test_Inspection_FailedRejects() public {
-        uint256 id = _inspected(LOT_A, 1000);
-
+        uint256 id = _register(LOT_A, 1000);
         vm.prank(inspector);
         passport.submitInspection(id, false, H);
         assertEq(uint8(passport.getLot(id).status), uint8(PassportLib.LotStatus.Rejected));
+    }
+
+    /// A later failed inspection of an inspected lot raises a flag for the regulator instead of flipping its status.
+    function test_Inspection_LaterFailureFlagsInsteadOfRejecting() public {
+        uint256 id = _inspected(LOT_A, 1000);
+        vm.prank(inspector);
+        passport.submitInspection(id, false, H);
+        assertEq(uint8(passport.getLot(id).status), uint8(PassportLib.LotStatus.Inspected));
+        assertTrue(passport.isFrozen(id));
     }
 
     function test_Inspection_InspectorMustBeIndependent() public {

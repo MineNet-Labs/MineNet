@@ -61,6 +61,8 @@ contract ServicesHandler is Test {
     function claim(uint256 seed, uint128 units) external counted {
         (bool ok, uint256 index) = _find(ServicesLib.JobStatus.Funded, seed);
         if (!ok) return;
+        uint64 due = services.dueAt(agreementId, index); // self-declared work: billable from the job's date
+        if (block.timestamp < due) vm.warp(due);
         uint256[] memory none;
         vm.prank(provider);
         try services.claimJob(agreementId, index, none, none, units, keccak256("work")) {

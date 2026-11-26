@@ -48,7 +48,8 @@ library AuditLib {
         InReview,
         Completed,
         Declined,
-        Cancelled
+        Cancelled,
+        Lapsed // fieldwork or review ran past its time limit
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -101,6 +102,7 @@ library AuditLib {
      * @param approved The accreditation body's review outcome (true when no review is required).
      * @param requestedAt When it was requested.
      * @param completedAt When it was completed (0 = not yet).
+     * @param stageStartedAt When the current stage (fieldwork or review) started, for its time limit.
      * @param scopeHash Hash of the audit scope and terms.
      * @param reportHash Hash of the full audit report (kept off-chain).
      * @param summaryHash Hash of the published executive summary.
@@ -117,6 +119,7 @@ library AuditLib {
         bool approved;
         uint64 requestedAt;
         uint64 completedAt;
+        uint64 stageStartedAt;
         bytes32 scopeHash;
         bytes32 reportHash;
         bytes32 summaryHash;
@@ -299,6 +302,13 @@ library AuditLib {
      * @param availableAt End of the cooling-off period.
      */
     error AuditRegistry__RotationRequired(bytes32 auditorOrg, uint64 availableAt);
+
+    /**
+     * @notice Engagement `engagementId` is still within its stage's time limit, which ends at `until`.
+     * @param engagementId The engagement.
+     * @param until End of the time limit.
+     */
+    error AuditRegistry__NotLapsed(uint256 engagementId, uint64 until);
 
     /**
      * @notice The company already has an open engagement `engagementId` for this scheme (no opinion shopping).

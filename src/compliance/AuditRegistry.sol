@@ -38,6 +38,20 @@ contract AuditRegistry {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
     /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Time an audit firm has from accepting an engagement to submit its report.
+     */
+    uint64 public constant FIELDWORK_LIMIT = 180 days;
+
+    /**
+     * @notice Time the accreditation body has to review a submitted report.
+     */
+    uint64 public constant REVIEW_LIMIT = 90 days;
+
+    /*//////////////////////////////////////////////////////////////
                                  STORAGE
     //////////////////////////////////////////////////////////////*/
 
@@ -217,8 +231,7 @@ contract AuditRegistry {
                 && !registry.isAuthorized(msg.sender, Actions.OWN_LOT)
         ) revert AuditLib.AuditRegistry__Unauthorized(msg.sender);
         if (!registry.orgRegistered(subjectOrg)) revert AuditLib.AuditRegistry__Unauthorized(msg.sender);
-        uint256 open = openEngagementOf[subjectOrg][scheme];
-        if (open != 0) revert AuditLib.AuditRegistry__EngagementOpen(open);
+        if (bySubject) _requireSlotFree(subjectOrg, scheme);
         _requireEligible(scheme, s, subjectOrg, auditorOrg);
 
         engagementId = _nextEngagementId++;
@@ -231,7 +244,8 @@ contract AuditRegistry {
         e.subjectConsented = bySubject;
         e.requestedAt = uint64(block.timestamp);
         e.scopeHash = scopeHash;
-        openEngagementOf[subjectOrg][scheme] = engagementId;
+        // a third-party request only takes the company's slot once the company consents
+        if (bySubject) openEngagementOf[subjectOrg][scheme] = engagementId;
         emit AuditLib.AuditRequested(engagementId, scheme, subjectOrg, auditorOrg, msg.sender);
     }
 
@@ -246,7 +260,9 @@ contract AuditRegistry {
         if (registry.participant(msg.sender).orgId != e.subjectOrg) {
             revert AuditLib.AuditRegistry__Unauthorized(msg.sender);
         }
+        _requireSlotFree(e.subjectOrg, e.scheme);
         e.subjectConsented = true;
+        openEngagementOf[e.subjectOrg][e.scheme] = engagementId;
         emit AuditLib.AuditConsented(engagementId, msg.sender);
     }
 
@@ -261,11 +277,10 @@ contract AuditRegistry {
         AuditLib.Engagement storage e = _requireStatus(engagementId, AuditLib.EngagementStatus.Requested);
         _onlyFirmAuditor(e.auditorOrg);
         if (!e.subjectConsented) revert AuditLib.AuditRegistry__ConsentRequired(engagementId);
-        if (!isAccredited(e.auditorOrg, e.scheme)) {
-            revert AuditLib.AuditRegistry__NotAccredited(e.auditorOrg, e.scheme);
-        }
+        _requireStillEligible(e);
         e.status = AuditLib.EngagementStatus.Fieldwork;
         e.leadAuditor = msg.sender;
+        e.stageStartedAt = uint64(block.timestamp);
         emit AuditLib.AuditAccepted(engagementId, msg.sender);
     }
 
@@ -288,8 +303,35 @@ contract AuditRegistry {
             revert AuditLib.AuditRegistry__Unauthorized(msg.sender);
         }
         e.status = outcome;
-        delete openEngagementOf[e.subjectOrg][e.scheme];
+        _freeSlot(engagementId, e);
         emit AuditLib.AuditEnded(engagementId, outcome, msg.sender);
+    }
+
+    /**
+     * @notice Closes an engagement whose fieldwork ran past {FIELDWORK_LIMIT} or whose review ran past
+     * {REVIEW_LIMIT}, so an unresponsive audit firm or reviewer can never block a company's audits for good.
+     * @dev An account of the audited company or of the audit firm, or the scheme's accreditation body. The company
+     * keeps any certification it already had until it expires; it can then engage another firm.
+     * @param engagementId Engagement id.
+     * @custom:emits AuditEnded
+     */
+    function lapseAudit(uint256 engagementId) external {
+        AuditLib.Engagement storage e = _engagements[engagementId];
+        uint64 limit;
+        if (e.status == AuditLib.EngagementStatus.Fieldwork) limit = FIELDWORK_LIMIT;
+        else if (e.status == AuditLib.EngagementStatus.InReview) limit = REVIEW_LIMIT;
+        else revert AuditLib.AuditRegistry__InvalidStatus(engagementId, e.status);
+        bytes32 callerOrg = registry.participant(msg.sender).orgId;
+        bool accreditor =
+            registry.isAuthorized(msg.sender, Actions.ACCREDIT) && callerOrg == _schemes[e.scheme].accreditorOrg;
+        if (callerOrg == bytes32(0) || (callerOrg != e.subjectOrg && callerOrg != e.auditorOrg && !accreditor)) {
+            revert AuditLib.AuditRegistry__Unauthorized(msg.sender);
+        }
+        uint64 until = e.stageStartedAt + limit;
+        if (block.timestamp <= until) revert AuditLib.AuditRegistry__NotLapsed(engagementId, until);
+        e.status = AuditLib.EngagementStatus.Lapsed;
+        _freeSlot(engagementId, e);
+        emit AuditLib.AuditEnded(engagementId, AuditLib.EngagementStatus.Lapsed, msg.sender);
     }
 
     /**
@@ -307,11 +349,13 @@ contract AuditRegistry {
         AuditLib.Engagement storage e = _requireStatus(engagementId, AuditLib.EngagementStatus.Fieldwork);
         _onlyFirmAuditor(e.auditorOrg);
         if (reportHash == bytes32(0)) revert AuditLib.AuditRegistry__MissingDocument();
+        _requireStillEligible(e);
         e.passed = passed;
         e.reportHash = reportHash;
         emit AuditLib.AuditReported(engagementId, passed, reportHash);
         if (_schemes[e.scheme].reviewRequired) {
             e.status = AuditLib.EngagementStatus.InReview;
+            e.stageStartedAt = uint64(block.timestamp);
         } else {
             _complete(engagementId, e, true, summaryHash);
         }
@@ -454,7 +498,7 @@ contract AuditRegistry {
         e.approved = approved;
         e.completedAt = uint64(block.timestamp);
         e.summaryHash = summaryHash;
-        delete openEngagementOf[e.subjectOrg][e.scheme];
+        _freeSlot(engagementId, e);
 
         uint64 until = e.passed && approved ? uint64(block.timestamp) + s.validity : 0;
         certifiedUntil[e.subjectOrg][e.scheme] = until;
@@ -518,6 +562,39 @@ contract AuditRegistry {
             s.accreditorOrg == bytes32(0) || !registry.isAuthorized(msg.sender, Actions.ACCREDIT)
                 || registry.participant(msg.sender).orgId != s.accreditorOrg
         ) revert AuditLib.AuditRegistry__NotAccreditor(msg.sender, scheme);
+    }
+
+    /**
+     * @dev Reverts if the company already has an engagement open for the scheme.
+     * @param subjectOrg The company.
+     * @param scheme The scheme.
+     */
+    function _requireSlotFree(bytes32 subjectOrg, bytes32 scheme) private view {
+        uint256 open = openEngagementOf[subjectOrg][scheme];
+        if (open != 0) revert AuditLib.AuditRegistry__EngagementOpen(open);
+    }
+
+    /**
+     * @dev Frees the company's slot if this engagement holds it.
+     * @param engagementId Engagement id.
+     * @param e The engagement.
+     */
+    function _freeSlot(uint256 engagementId, AuditLib.Engagement storage e) private {
+        if (openEngagementOf[e.subjectOrg][e.scheme] == engagementId) delete openEngagementOf[e.subjectOrg][e.scheme];
+    }
+
+    /**
+     * @dev Re-checks, at each step of the engagement, that the firm is still accredited and has not since declared
+     * (or been found to have) a conflict of interest with the company.
+     * @param e The engagement.
+     */
+    function _requireStillEligible(AuditLib.Engagement storage e) private view {
+        if (!isAccredited(e.auditorOrg, e.scheme)) {
+            revert AuditLib.AuditRegistry__NotAccredited(e.auditorOrg, e.scheme);
+        }
+        if (conflicted[e.auditorOrg][e.subjectOrg]) {
+            revert AuditLib.AuditRegistry__NotIndependent(e.auditorOrg, e.subjectOrg);
+        }
     }
 
     /**

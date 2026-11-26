@@ -229,10 +229,40 @@ contract EscrowManagerTest is MineNetFixture {
         assertEq(uint8(w), uint8(DisputeLib.Winner.Buyer));
 
         escrow.resolveDispute(orderId);
+        assertEq(uint8(escrow.getDispute(orderId).winner), uint8(DisputeLib.Winner.Buyer));
+        // the buyer holds the goods: the refund waits for their return
+        assertEq(uint8(escrow.getOrder(orderId).status), uint8(EscrowLib.OrderStatus.AwaitingReturn));
+        assertEq(escrow.claimable(usdc, buyer), 0);
+        vm.expectRevert(abi.encodeWithSelector(EscrowLib.EscrowManager__NotReturned.selector, orderId));
+        escrow.completeReturn(orderId);
+
+        vm.prank(buyer); // a return to an address the seller did not name does not count
+        vm.expectRevert(abi.encodeWithSelector(EscrowLib.EscrowManager__Unauthorized.selector, buyer));
+        escrow.setReturnAddress(orderId, warehouse);
+        vm.prank(miner); // the miner holds no custody itself: it names its warehouse
+        escrow.setReturnAddress(orderId, warehouse);
+        _moveCustody(id, buyer, warehouse);
+        escrow.completeReturn(orderId);
         assertEq(escrow.claimable(usdc, buyer), PRICE);
         assertEq(passport.ownerOf(id), miner);
         assertFalse(passport.escrowLocked(id));
-        assertEq(uint8(escrow.getDispute(orderId).winner), uint8(DisputeLib.Winner.Buyer));
+    }
+
+    /// A refunded buyer who keeps the goods past the return window has bought them.
+    function test_Verdict_Refund_GoodsNotReturned_SaleCompletes() public {
+        (uint256 id, uint256 orderId) = _delivered(0);
+        _open(orderId);
+        _afterEvidence();
+        escrow.resolveDispute(orderId);
+        uint64 deadline = escrow.getOrder(orderId).returnDeadline;
+
+        vm.expectRevert(abi.encodeWithSelector(EscrowLib.EscrowManager__ReturnWindowOpen.selector, orderId, deadline));
+        escrow.claimUnreturned(orderId);
+        vm.warp(deadline + 1);
+        escrow.claimUnreturned(orderId);
+        assertEq(escrow.claimable(usdc, buyer), 0);
+        assertEq(escrow.claimable(usdc, miner), PRICE - FEE);
+        assertEq(passport.ownerOf(id), buyer);
     }
 
     function test_Verdict_NothingProven_SellerWins() public {
@@ -354,6 +384,10 @@ contract EscrowManagerTest is MineNetFixture {
         _respond(orderId);
         _afterEvidence();
         assertEq(uint8(escrow.resolveDispute(orderId)), uint8(DisputeLib.Verdict.ComplianceFailure));
+        vm.prank(miner);
+        escrow.setReturnAddress(orderId, warehouse);
+        _moveCustody(id, buyer, warehouse); // goods back with the seller's warehouse
+        escrow.completeReturn(orderId);
         assertEq(escrow.claimable(usdc, buyer), PRICE);
     }
 

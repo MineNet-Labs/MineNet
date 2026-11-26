@@ -2,6 +2,9 @@
 pragma solidity 0.8.34;
 
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {IVRFCoordinatorV2Plus} from "@chainlink/contracts/src/v0.8/vrf/interfaces/IVRFCoordinatorV2Plus.sol";
+import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/libraries/VRFV2PlusClient.sol";
+import {PassportLib} from "src/traceability/libraries/PassportLib.sol";
 import {IMineNetRegistry} from "src/access/interfaces/IMineNetRegistry.sol";
 import {IInspectionRegistry} from "src/compliance/interfaces/IInspectionRegistry.sol";
 import {ISiteRegistry} from "src/compliance/interfaces/ISiteRegistry.sol";
@@ -34,12 +37,20 @@ import {InspectionLib} from "src/compliance/libraries/InspectionLib.sol";
  * pool. The inspector has {inspectionWindow} to inspect. It may decline (e.g. a conflict of interest), and once the
  * window has passed the lot can be reassigned; the previous inspector is never drawn again for that round.
  *
+ * An assignment closes as soon as the inspector submits its pass / fail result to {LotPassport}: the inspector
+ * cannot inspect the lot again, and cannot revise its result. A lot that failed inspection is re-inspected only on
+ * a regulator's order, so an operator cannot keep requesting inspections until one passes.
+ *
  * {SupplyChain} (inspection checkpoints) and {LotPassport} (pass / fail inspections) only accept the inspector
  * assigned here, and {MineSiteRegistry} only accepts site safety inspections and reserve verifications from
  * inspectors deployed to the site's district.
  *
- * Randomness uses `block.prevrandao`, which removes any choice by the requester; it is not bias-proof against the
- * block producer. A verifiable randomness source (e.g. Chainlink VRF) can replace it without changing the interface.
+ * ## Randomness
+ * When Chainlink VRF v2.5 is configured ({setVrfConfig}), every draw uses verifiable randomness: a request records a
+ * pending draw and the assignment is made when the coordinator fulfils it, so nobody (requester, sequencer or block
+ * producer) can predict or steer which inspector is drawn. Without VRF the registry falls back to
+ * `block.prevrandao`, which removes the requester's choice but is predictable on a sequencer-ordered L2 such as
+ * Base; configure VRF for production.
  */
 contract InspectionRegistry is IInspectionRegistry {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -67,6 +78,11 @@ contract InspectionRegistry is IInspectionRegistry {
      * @notice Longest inspection window.
      */
     uint32 public constant MAX_INSPECTION_WINDOW = 60 days;
+
+    /**
+     * @notice Time after which an unfulfilled VRF draw can be replaced by a new request.
+     */
+    uint64 public constant DRAW_TIMEOUT = 1 days;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
@@ -121,6 +137,21 @@ contract InspectionRegistry is IInspectionRegistry {
      * @dev Lot => current inspection assignment.
      */
     mapping(uint256 tokenId => InspectionLib.Assignment) private _assignments;
+
+    /**
+     * @notice Chainlink VRF settings (zero coordinator = `block.prevrandao` fallback).
+     */
+    InspectionLib.VrfConfig public vrfConfig;
+
+    /**
+     * @dev Lot => random draw awaiting VRF fulfilment.
+     */
+    mapping(uint256 tokenId => InspectionLib.PendingDraw) private _pendingDraws;
+
+    /**
+     * @dev VRF request id => lot.
+     */
+    mapping(uint256 requestId => uint256 tokenId) private _drawOf;
 
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
@@ -235,41 +266,101 @@ contract InspectionRegistry is IInspectionRegistry {
     }
 
     /**
+     * @notice Sets the Chainlink VRF v2.5 settings used to draw inspectors.
+     * @dev Only a registry admin. A zero coordinator switches back to the `block.prevrandao` fallback. The registry
+     * must be added as a consumer of the subscription.
+     * @param config VRF settings.
+     * @custom:emits VrfConfigSet
+     */
+    function setVrfConfig(InspectionLib.VrfConfig calldata config) external {
+        if (!registry.isAdmin(msg.sender)) revert InspectionLib.InspectionRegistry__NotRegistryAdmin(msg.sender);
+        if (
+            config.coordinator != address(0)
+                && (config.keyHash == bytes32(0) || config.subId == 0 || config.callbackGasLimit == 0)
+        ) revert InspectionLib.InspectionRegistry__InvalidVrfConfig();
+        vrfConfig = config;
+        emit InspectionLib.VrfConfigSet(config.coordinator, config.keyHash, config.subId);
+    }
+
+    /**
      * @notice Requests an inspection of a lot: the platform assigns an independent inspector at random.
-     * @dev The lot's owner or custodian, or a regulator (unannounced inspection). Not while the current assignment
-     * is still within its window; after it, the lot is reassigned to a different inspector.
+     * @dev The lot's owner or custodian, or a regulator (unannounced inspection). Not while an assignment is open or
+     * a draw is pending. A lot that failed inspection is re-inspected only on a regulator's order. With VRF
+     * configured the assignment is made on fulfilment and this returns zero.
      * @param tokenId The lot.
-     * @return inspector The assigned inspector.
+     * @return inspector The assigned inspector (zero while a VRF draw is pending).
      * @custom:emits InspectionAssigned
+     * @custom:emits DrawRequested
      */
     function requestInspection(uint256 tokenId) external returns (address inspector) {
         address owner = passport.ownerOf(tokenId);
         address custodian = passport.custodianOf(tokenId);
-        if (msg.sender != owner && msg.sender != custodian && !registry.isAuthorized(msg.sender, Actions.REGULATE)) {
+        bool regulator = registry.isAuthorized(msg.sender, Actions.REGULATE);
+        if (msg.sender != owner && msg.sender != custodian && !regulator) {
             revert InspectionLib.InspectionRegistry__NotAllowedToRequest(tokenId, msg.sender);
         }
+        if (!regulator && passport.getLot(tokenId).status == PassportLib.LotStatus.Rejected) {
+            revert InspectionLib.InspectionRegistry__ReinspectionNeedsRegulator(tokenId);
+        }
         InspectionLib.Assignment storage current = _assignments[tokenId];
-        if (current.inspector != address(0) && block.timestamp <= current.dueBy) {
+        if (!current.closed && current.inspector != address(0) && block.timestamp <= current.dueBy) {
             revert InspectionLib.InspectionRegistry__AssignmentOpen(tokenId, current.dueBy);
         }
-        inspector = _assign(tokenId, owner, custodian);
+        // A completed round may draw the same inspector again; an expired one may not.
+        address excluded = current.completed ? address(0) : current.inspector;
+        inspector = _requestDraw(tokenId, excluded);
     }
 
     /**
      * @notice The assigned inspector declines a lot (e.g. a conflict of interest); the lot is reassigned at once.
-     * @dev Only the inspector currently assigned to the lot.
+     * @dev Only the inspector holding the open assignment.
      * @param tokenId The lot.
      * @param reasonHash Hash of the reason.
-     * @return inspector The newly assigned inspector.
+     * @return inspector The newly assigned inspector (zero while a VRF draw is pending).
      * @custom:emits InspectionDeclined
      * @custom:emits InspectionAssigned
      */
     function declineInspection(uint256 tokenId, bytes32 reasonHash) external returns (address inspector) {
-        if (_assignments[tokenId].inspector != msg.sender) {
+        if (!isAssignmentOpen(tokenId, msg.sender)) {
             revert InspectionLib.InspectionRegistry__NotAssigned(tokenId, msg.sender);
         }
         emit InspectionLib.InspectionDeclined(tokenId, msg.sender, reasonHash);
-        inspector = _assign(tokenId, passport.ownerOf(tokenId), passport.custodianOf(tokenId));
+        inspector = _requestDraw(tokenId, msg.sender);
+    }
+
+    /**
+     * @inheritdoc IInspectionRegistry
+     */
+    function completeInspection(uint256 tokenId, address inspector) external {
+        if (msg.sender != address(passport)) revert InspectionLib.InspectionRegistry__NotPassport(msg.sender);
+        if (!isAssignmentOpen(tokenId, inspector)) {
+            revert InspectionLib.InspectionRegistry__NotAssigned(tokenId, inspector);
+        }
+        InspectionLib.Assignment storage a = _assignments[tokenId];
+        a.completed = true;
+        emit InspectionLib.InspectionCompleted(tokenId, inspector, a.round);
+        _closeCurrent(tokenId);
+    }
+
+    /**
+     * @notice Receives verifiable randomness from the Chainlink VRF coordinator and makes the pending assignment.
+     * @dev Only the configured coordinator. Never reverts on a missing inspector (VRF does not retry): the draw is
+     * cleared and the lot can be requested again.
+     * @param requestId VRF request id.
+     * @param randomWords Random words (the first is used).
+     * @custom:emits InspectionAssigned
+     * @custom:emits DrawFailed
+     */
+    function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external {
+        if (msg.sender != vrfConfig.coordinator) revert InspectionLib.InspectionRegistry__NotCoordinator(msg.sender);
+        uint256 tokenId = _drawOf[requestId];
+        InspectionLib.PendingDraw memory p = _pendingDraws[tokenId];
+        delete _drawOf[requestId];
+        if (p.requestId != requestId || requestId == 0) return; // superseded by a newer request
+        delete _pendingDraws[tokenId];
+        if (_assign(tokenId, randomWords[0], p.excluded, p.requestedBy) == address(0)) {
+            emit InspectionLib.DrawFailed(tokenId, requestId);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -277,10 +368,29 @@ contract InspectionRegistry is IInspectionRegistry {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @inheritdoc IInspectionRegistry
+     * @notice The inspector last assigned to a lot.
+     * @param tokenId The lot.
+     * @return inspector The inspector (zero if never assigned); see {isAssignmentOpen} for whether it may inspect.
      */
     function assignedInspector(uint256 tokenId) external view returns (address inspector) {
         inspector = _assignments[tokenId].inspector;
+    }
+
+    /**
+     * @inheritdoc IInspectionRegistry
+     */
+    function isAssignmentOpen(uint256 tokenId, address inspector) public view returns (bool) {
+        InspectionLib.Assignment storage a = _assignments[tokenId];
+        return inspector != address(0) && a.inspector == inspector && !a.closed && block.timestamp <= a.dueBy;
+    }
+
+    /**
+     * @notice Returns the random draw of a lot still awaiting VRF fulfilment.
+     * @param tokenId The lot.
+     * @return The pending draw (zero request id if none).
+     */
+    function pendingDraw(uint256 tokenId) external view returns (InspectionLib.PendingDraw memory) {
+        return _pendingDraws[tokenId];
     }
 
     /**
@@ -333,48 +443,103 @@ contract InspectionRegistry is IInspectionRegistry {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev Draws an eligible inspector (district pool first, then national), excluding the current one, and records
-     * the assignment, moving the checkpoint right in {SupplyChain} from the previous inspector to the new one.
+     * @dev Starts a draw for a lot: requests VRF randomness when configured (the assignment follows on
+     * fulfilment), otherwise draws at once with the `block.prevrandao` fallback and reverts if nobody is eligible.
      * @param tokenId The lot.
-     * @param owner The lot's owner.
-     * @param custodian The lot's custodian.
-     * @return inspector The assigned inspector.
+     * @param excluded Inspector that may not be drawn.
+     * @return inspector The assigned inspector, or zero while a VRF draw is pending.
      */
-    function _assign(uint256 tokenId, address owner, address custodian) private returns (address inspector) {
-        InspectionLib.Assignment storage a = _assignments[tokenId];
-        address previous = a.inspector;
-        bytes32 ownerOrg = registry.participant(owner).orgId;
-        bytes32 custodianOrg = registry.participant(custodian).orgId;
-        uint256 seed = uint256(keccak256(abi.encode(block.prevrandao, block.timestamp, tokenId, a.round)));
+    function _requestDraw(uint256 tokenId, address excluded) private returns (address inspector) {
+        InspectionLib.PendingDraw storage pending = _pendingDraws[tokenId];
+        if (pending.requestId != 0 && block.timestamp <= pending.requestedAt + DRAW_TIMEOUT) {
+            revert InspectionLib.InspectionRegistry__DrawPending(tokenId);
+        }
+        InspectionLib.VrfConfig memory c = vrfConfig;
+        if (c.coordinator == address(0)) {
+            // slither-disable-next-line weak-prng (documented fallback; production uses Chainlink VRF)
+            uint256 seed =
+                uint256(keccak256(abi.encode(block.prevrandao, block.timestamp, tokenId, _assignments[tokenId].round)));
+            inspector = _assign(tokenId, seed, excluded, msg.sender);
+            if (inspector == address(0)) revert InspectionLib.InspectionRegistry__NoInspectorAvailable(tokenId);
+            return inspector;
+        }
+        _closeCurrent(tokenId);
+        uint256 requestId = IVRFCoordinatorV2Plus(c.coordinator)
+            .requestRandomWords(
+                VRFV2PlusClient.RandomWordsRequest({
+                    keyHash: c.keyHash,
+                    subId: c.subId,
+                    requestConfirmations: c.confirmations,
+                    callbackGasLimit: c.callbackGasLimit,
+                    numWords: 1,
+                    extraArgs: VRFV2PlusClient._argsToBytes(
+                        VRFV2PlusClient.ExtraArgsV1({nativePayment: c.nativePayment})
+                    )
+                })
+            );
+        _pendingDraws[tokenId] = InspectionLib.PendingDraw({
+            requestId: requestId, requestedBy: msg.sender, requestedAt: uint64(block.timestamp), excluded: excluded
+        });
+        _drawOf[requestId] = tokenId;
+        emit InspectionLib.DrawRequested(tokenId, requestId, msg.sender);
+    }
 
+    /**
+     * @dev Draws an eligible inspector (district pool first, then national), excluding `excluded`, and records the
+     * assignment, moving the checkpoint right in {SupplyChain} from the previous inspector to the new one. Owner
+     * and custodian are read at draw time, so a VRF fulfilment uses the lot's current parties.
+     * @param tokenId The lot.
+     * @param seed Randomness.
+     * @param excluded Inspector that may not be drawn.
+     * @param requestedBy Account that requested the inspection.
+     * @return inspector The assigned inspector, or zero if nobody is eligible (nothing changes then).
+     */
+    function _assign(uint256 tokenId, uint256 seed, address excluded, address requestedBy)
+        private
+        returns (address inspector)
+    {
+        bytes32 ownerOrg = registry.participant(passport.ownerOf(tokenId)).orgId;
+        bytes32 custodianOrg = registry.participant(passport.custodianOf(tokenId)).orgId;
         uint256 siteId = passport.siteOf(tokenId);
         bytes32 coverage =
             siteId == 0 ? InspectionLib.NATIONAL : InspectionLib.districtKey(sites.getSiteLocation(siteId).district);
-        inspector = _draw(coverage, seed, previous, ownerOrg, custodianOrg);
+        inspector = _draw(coverage, seed, excluded, ownerOrg, custodianOrg);
         if (inspector == address(0) && coverage != InspectionLib.NATIONAL) {
             coverage = InspectionLib.NATIONAL;
-            inspector = _draw(coverage, seed, previous, ownerOrg, custodianOrg);
+            inspector = _draw(coverage, seed, excluded, ownerOrg, custodianOrg);
         }
-        if (inspector == address(0)) revert InspectionLib.InspectionRegistry__NoInspectorAvailable(tokenId);
+        if (inspector == address(0)) return address(0);
 
-        // effects
-        if (previous != address(0) && _inspectors[previous].activeAssignments != 0) {
-            _inspectors[previous].activeAssignments -= 1;
-        }
+        _closeCurrent(tokenId);
+        InspectionLib.Assignment storage a = _assignments[tokenId];
         _inspectors[inspector].activeAssignments += 1;
         uint64 dueBy = uint64(block.timestamp) + inspectionWindow;
         uint32 round = a.round + 1;
         a.inspector = inspector;
-        a.requestedBy = msg.sender;
+        a.requestedBy = requestedBy;
         a.assignedAt = uint64(block.timestamp);
         a.dueBy = dueBy;
         a.round = round;
         a.coverage = coverage;
-        emit InspectionLib.InspectionAssigned(tokenId, inspector, msg.sender, coverage, dueBy, round);
+        a.completed = false;
+        a.closed = false;
+        emit InspectionLib.InspectionAssigned(tokenId, inspector, requestedBy, coverage, dueBy, round);
 
-        // interactions: move the checkpoint right in SupplyChain
-        if (previous != address(0)) supplyChain.unassignInspector(tokenId, previous);
         supplyChain.assignInspector(tokenId, inspector);
+    }
+
+    /**
+     * @dev Ends the lot's current assignment if it is still open (declined or lapsed): frees the inspector's slot
+     * and withdraws its checkpoint right in {SupplyChain}.
+     * @param tokenId The lot.
+     */
+    function _closeCurrent(uint256 tokenId) private {
+        InspectionLib.Assignment storage a = _assignments[tokenId];
+        address previous = a.inspector;
+        if (previous == address(0) || a.closed) return;
+        a.closed = true;
+        if (_inspectors[previous].activeAssignments != 0) _inspectors[previous].activeAssignments -= 1;
+        supplyChain.unassignInspector(tokenId, previous);
     }
 
     /**
@@ -423,9 +588,7 @@ contract InspectionRegistry is IInspectionRegistry {
             if (inspectorateOf[org] == InspectionLib.InspectorateKind.None) continue;
             eligible[count++] = candidate;
         }
-        // block.prevrandao removes the requester's choice; it is not bias-proof against the block producer (documented
-        // trade-off; Chainlink VRF can replace it behind the same interface).
-        // slither-disable-next-line weak-prng
+        // slither-disable-next-line weak-prng (the seed is VRF output when configured)
         return count == 0 ? address(0) : eligible[seed % count];
     }
 

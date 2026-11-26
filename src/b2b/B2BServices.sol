@@ -368,7 +368,8 @@ contract B2BServices is ReentrancyGuardTransient, Pausable, IB2BServices {
      * @notice The provider bills a job for its work. For verified kinds the units are computed on-chain from
      * `refs`; for claimed kinds they are `claimedUnits`. Billing is capped at the job's budget.
      * @dev The provider side, on an Active agreement, once the job is funded (or while scheduled when paid
-     * off-chain). Storage can only be billed from the job's due date (end of the period). See the contract
+     * off-chain). Storage and claimed kinds (security, consulting...) can only be billed from the job's due date,
+     * so self-declared work is never billed before it was scheduled to happen. See the contract
      * documentation for what `refs` and `checkpointIndexes` mean per kind.
      * @param agreementId Agreement id.
      * @param index Job index.
@@ -495,7 +496,9 @@ contract B2BServices is ReentrancyGuardTransient, Pausable, IB2BServices {
 
     /**
      * @notice The arbiter named in the agreement decides a dispute the parties could not settle.
-     * @dev Only the agreement's arbiter, after {NEGOTIATION_PERIOD} from the dispute.
+     * @dev The agreement's arbiter, after {NEGOTIATION_PERIOD} from the dispute. When no arbiter was agreed, or the
+     * arbiter has not ruled within {B2BLib.ARBITRATION_PERIOD} after that, the platform (a registry admin) decides
+     * instead, so a dispute can never lock the escrow forever.
      * @param agreementId Agreement id.
      * @param index Disputed job.
      * @param amount Amount awarded to the provider; at most the billed amount.
@@ -504,11 +507,9 @@ contract B2BServices is ReentrancyGuardTransient, Pausable, IB2BServices {
      */
     function arbitrate(uint256 agreementId, uint256 index, uint256 amount, bytes32 awardHash) external nonReentrant {
         ServicesLib.Agreement storage a = _requireStatus(agreementId, B2BLib.AgreementStatus.Active);
-        if (a.arbiter == address(0) || msg.sender != a.arbiter) revert B2BLib.B2B__NotArbiter(msg.sender);
         ServicesLib.Job storage j = _job(agreementId, a, index);
         _requireJobStatus(index, j, ServicesLib.JobStatus.Disputed);
-        uint64 until = _disputes[agreementId][index].openedAt + NEGOTIATION_PERIOD;
-        if (block.timestamp <= until) revert B2BLib.B2B__NegotiationPeriod(until);
+        ServicesLogic.requireArbiter(a.arbiter, _disputes[agreementId][index].openedAt, NEGOTIATION_PERIOD, registry);
         if (amount > j.amount) revert B2BLib.B2B__InvalidSettlement(amount, j.amount);
         _pay(agreementId, a, index, j, amount, false, msg.sender, awardHash);
     }
@@ -799,15 +800,15 @@ contract B2BServices is ReentrancyGuardTransient, Pausable, IB2BServices {
     }
 
     /**
-     * @dev Credits `amount` of the agreement's token to `account`. No-op for off-chain agreements and zero
-     * amounts.
+     * @dev Credits `amount` of the agreement's token to `account`'s payout account (its company's, if the admin set
+     * one: {MineNetRegistry-payoutOf}). No-op for off-chain agreements and zero amounts.
      * @param a The agreement.
      * @param account Account to credit.
      * @param amount Amount.
      */
     function _credit(ServicesLib.Agreement storage a, address account, uint256 amount) private {
         if (amount == 0 || address(a.paymentToken) == address(0)) return;
-        claimable[a.paymentToken][account] += amount;
+        claimable[a.paymentToken][registry.payoutOf(account)] += amount;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -900,7 +901,8 @@ contract B2BServices is ReentrancyGuardTransient, Pausable, IB2BServices {
     }
 
     /**
-     * @dev The side `account` acts for, by organisation.
+     * @dev The side `account` acts for, by organisation. The account must itself be authorised to enter agreements
+     * (in good standing, licensed, with a trading role): any other employee of the company cannot act for it.
      * @param agreementId Agreement id (for the error).
      * @param a The agreement.
      * @param account The account.
@@ -912,7 +914,7 @@ contract B2BServices is ReentrancyGuardTransient, Pausable, IB2BServices {
         returns (B2BLib.Side)
     {
         bytes32 orgId = _orgOf(account);
-        if (orgId != bytes32(0)) {
+        if (orgId != bytes32(0) && registry.isAuthorized(account, Actions.ENTER_AGREEMENT)) {
             if (orgId == a.proposer.orgId) return B2BLib.Side.Proposer;
             if (orgId == a.counterparty.orgId) return B2BLib.Side.Counterparty;
         }

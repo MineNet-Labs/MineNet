@@ -119,8 +119,8 @@ contract WorkforceTest is MineNetFixture {
         assertTrue(workforce.attendedOn(W1, today));
 
         vm.warp(block.timestamp + 1 days);
-        vm.prank(oracle); // biometric attendance device
-        workforce.recordAttendance(site, _today(), _ids(W1));
+        vm.prank(oracle); // biometric attendance device, independent of the employer
+        workforce.recordAttendance(site, today + 1, _ids(W1));
         assertEq(workforce.getWorker(W1).daysWorked, 2);
         assertEq(workforce.getWorker(W2).daysWorked, 1);
     }

@@ -88,6 +88,8 @@ contract ExplorerTest is MineNetFixture {
         inputs[1] = b;
         PassportLib.LotOutput[] memory outs = new PassportLib.LotOutput[](1);
         outs[0] = PassportLib.LotOutput("ingot-1", keccak256("TIN_INGOT"), 7_000, H);
+        vm.prank(miner); // the owner consents to toll refining
+        passport.setApprovalForAll(refinery, true);
         vm.prank(refinery);
         uint256 ingot = passport.processLots(inputs, outs, H)[0];
 

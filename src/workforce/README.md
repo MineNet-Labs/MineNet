@@ -64,3 +64,8 @@ scope. Other contracts (e.g. `MineSiteRegistry`) check staff permissions through
 - Staff can never assign roles, change a role holder or themselves, or pay or record payments to themselves.
 - An inactive worker's staff role has no effect.
 - Stablecoin payments are pulled from the paying wallet, which must have approved this contract.
+- **Wallet changes need the worker.** An employer sets a worker's first wallet directly, but changing an
+  existing one only proposes it: the worker (from the current wallet) or a regulator must confirm
+  (`confirmWalletChange`), so nobody at the employer can redirect wages.
+- **Independent devices only.** Attendance devices and cash-acknowledgement oracles must belong to an
+  organisation other than the employer.

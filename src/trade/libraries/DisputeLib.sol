@@ -11,9 +11,14 @@ import {SupplyChainLib} from "src/traceability/libraries/SupplyChainLib.sol";
  * @dev Evidence is on-chain facts: {SupplyChain} checkpoints for the lot recorded after the sale (weights, seal
  * and condition checks, inspections and grades, audits, oracle reports). Each fact is either:
  * - independent: signed by someone outside both parties' organisations (an oracle device, an inspector,
- *   customs, a third-party warehouse...), so it is decisive; or
+ *   customs, a third-party warehouse...): it can prove integrity failures, weight loss and grade shortfalls; or
  * - party-signed: signed by the buyer's or seller's own organisation (e.g. the buyer reporting a broken seal at
- *   arrival). It counts unless the other side rebuts it with a LATER independent fact showing the opposite.
+ *   arrival). It is kept on record but proves nothing by itself: the party holding the goods could write anything,
+ *   and the other side has no access to the goods to rebut it. A buyer who finds a problem asks for an independent
+ *   check (an inspection through {InspectionRegistry}, or an independent weighbridge reading).
+ *
+ * A full refund judged after the buyer received the goods is only paid once the goods are back with the seller
+ * ({EscrowManager-completeReturn}), so a refund can never leave the buyer with both the money and the minerals.
  *
  * Verdict, first rule that applies:
  * 1. `NoResponse`: the seller never responded or submitted evidence. Buyer refunded in full.
@@ -143,7 +148,7 @@ library DisputeLib {
 
     /**
      * @notice The largest proven weight loss among the buyer's facts.
-     * @dev A party-signed weighing counts unless rebutted by a later independent weighing within tolerance.
+     * @dev Only independent weighings count.
      * @param c The case.
      * @return maxShort Shortfall, in basis points of the reference weight.
      */
@@ -151,7 +156,7 @@ library DisputeLib {
         for (uint256 i; i < c.buyerFacts.length; ++i) {
             Fact memory f = c.buyerFacts[i];
             if (f.measuredQty == 0 || f.withinTolerance || f.measuredQty >= f.referenceQty) continue;
-            if (!f.independent && _weightRebutted(f, c.sellerFacts)) continue;
+            if (!f.independent) continue;
             uint256 short = ((f.referenceQty - f.measuredQty) * BPS) / f.referenceQty;
             if (short > maxShort) maxShort = short;
         }
@@ -179,13 +184,12 @@ library DisputeLib {
     /**
      * @dev Whether the buyer proved a broken seal, damage, failed audit or failed oracle report.
      * @param c The case.
-     * @return True if an independent, or unrebutted party-signed, integrity failure exists.
+     * @return True if an independent integrity failure exists.
      */
     function _integrityProven(Case memory c) private pure returns (bool) {
         for (uint256 i; i < c.buyerFacts.length; ++i) {
             Fact memory f = c.buyerFacts[i];
-            if (!_isIntegrityFailure(f)) continue;
-            if (f.independent || !_integrityRebutted(f, c.sellerFacts)) return true;
+            if (f.independent && _isIntegrityFailure(f)) return true;
         }
         return false;
     }
@@ -201,40 +205,6 @@ library DisputeLib {
         }
         return (f.cpType == SupplyChainLib.CheckpointType.Audit
                 || f.cpType == SupplyChainLib.CheckpointType.OracleReport) && !f.withinTolerance;
-    }
-
-    /**
-     * @dev A party-signed integrity claim is rebutted by a later independent check that found the lot in good
-     * condition.
-     * @param claim The party-signed claim.
-     * @param counter The other side's facts.
-     * @return True if rebutted.
-     */
-    function _integrityRebutted(Fact memory claim, Fact[] memory counter) private pure returns (bool) {
-        for (uint256 i; i < counter.length; ++i) {
-            Fact memory r = counter[i];
-            if (
-                r.independent && r.timestamp >= claim.timestamp && r.condition == SupplyChainLib.Condition.Good
-                    && !_isIntegrityFailure(r)
-            ) return true;
-        }
-        return false;
-    }
-
-    /**
-     * @dev A party-signed weight claim is rebutted by a later independent weighing within tolerance.
-     * @param claim The party-signed claim.
-     * @param counter The other side's facts.
-     * @return True if rebutted.
-     */
-    function _weightRebutted(Fact memory claim, Fact[] memory counter) private pure returns (bool) {
-        for (uint256 i; i < counter.length; ++i) {
-            Fact memory r = counter[i];
-            if (r.independent && r.timestamp >= claim.timestamp && r.measuredQty != 0 && r.withinTolerance) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

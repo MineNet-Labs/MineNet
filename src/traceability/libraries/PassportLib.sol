@@ -227,6 +227,13 @@ library PassportLib {
     event ModuleSet(address indexed module, bool enabled);
 
     /**
+     * @notice Emitted when a trade contract is allowed or disallowed to lock lots.
+     * @param locker Trade contract.
+     * @param enabled Whether it may lock lots.
+     */
+    event LockerSet(address indexed locker, bool enabled);
+
+    /**
      * @notice Emitted when the escrow locks or unlocks a lot.
      * @param tokenId Lot.
      * @param locked Whether the lot is now locked.
@@ -390,6 +397,14 @@ library PassportLib {
      * @param tokenId The lot.
      */
     error LotPassport__NotLocked(uint256 tokenId);
+
+    /**
+     * @notice `processor` may not process lot `tokenId`: it is outside the owner's organisation and the owner did
+     * not approve it for the lot.
+     * @param tokenId The lot.
+     * @param processor The processor.
+     */
+    error LotPassport__NoOwnerConsent(uint256 tokenId, address processor);
 
     /**
      * @notice The escrow is not approved to transfer lot `tokenId`.

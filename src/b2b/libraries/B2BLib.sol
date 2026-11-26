@@ -19,6 +19,12 @@ library B2BLib {
     uint16 internal constant BPS = 10_000;
 
     /**
+     * @notice Time after the negotiation period within which the agreed arbiter must rule; after it (or at once when
+     * no arbiter was agreed), the platform (registry admin) decides the dispute so escrowed funds never stay locked.
+     */
+    uint64 internal constant ARBITRATION_PERIOD = 30 days;
+
+    /**
      * @notice Grams per kilogram: quantities are in grams, prices per kilogram.
      */
     uint256 internal constant GRAMS_PER_KG = 1_000;
@@ -764,7 +770,8 @@ library B2BLib {
     error B2B__InvalidSettlement(uint256 amount, uint256 max);
 
     /**
-     * @notice The agreement has no arbiter, or `account` is not it.
+     * @notice `account` may not decide this dispute: not the agreed arbiter, nor the platform once the arbiter's
+     * time has run out (or when no arbiter was agreed).
      * @param account The account.
      */
     error B2B__NotArbiter(address account);

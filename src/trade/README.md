@@ -42,8 +42,10 @@ checkpoints of the lot recorded after the sale. `DisputeLib.judge`, a pure funct
 | 5 | `QualityShortfall` | Proven missing weight and/or lower grade | Proportional refund, buyer keeps the lot |
 | 6 | `SellerWins` | Nothing proven | Seller paid |
 
-Independent signers (outside both organisations) are decisive. A party-signed fact counts unless the other side
-rebuts it with a *later* independent fact.
+Only facts signed by someone outside both organisations prove an integrity failure or a weight shortfall; a
+party-signed fact is kept on record but proves nothing by itself (the party holding the goods could write anything,
+and the other side cannot reach the goods to rebut it). A full refund after delivery is paid once the goods are back
+with the seller.
 
 ## Folder contents
 
@@ -62,3 +64,14 @@ rebuts it with a *later* independent fact.
 - Withdrawals, refunds and dispute resolution keep working while the contracts are paused.
 - If a verdict gives the lot to the buyer while it is frozen, the money is paid out and the title transfer waits
   until the freeze is lifted (`finalizeTitle`).
+- **Delivery is the passport's custody record.** An order is delivered once custody reached the buyer's
+  organisation during the lock (`custodyReachedAt`); forwarding the goods afterwards does not make them
+  undelivered, so `cancelForNonDelivery` cannot be abused. `settle` records the delivery itself.
+- **No refund while keeping the goods.** A full refund judged after delivery waits (`AwaitingReturn`) until the
+  goods are back with the seller's organisation, or with the custodian the seller names (`setReturnAddress`, e.g.
+  its warehouse, since miners do not hold custody themselves) (`completeReturn`); after `RETURN_WINDOW` (30 days) without a return the sale
+  completes instead (`claimUnreturned`). A frozen lot is under the regulator's control and is refunded at once.
+- **Only independent evidence decides.** A party's own checkpoints (e.g. the buyer reporting a broken seal at
+  arrival) prove nothing by themselves; integrity failures and weight shortfalls need an independent signer.
+- **Both parties must be licensed.** `openOrder` checks the seller's `SELL_LOT` as well as the buyer's
+  `BUY_LOT`, so a suspended seller cannot sell through an old listing.

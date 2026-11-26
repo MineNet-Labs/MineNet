@@ -102,6 +102,11 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
     mapping(address wallet => bytes32 workerId) public workerOfWallet;
 
     /**
+     * @notice A wallet change the employer proposed and the worker has not yet confirmed.
+     */
+    mapping(bytes32 workerId => address wallet) public pendingWalletOf;
+
+    /**
      * @dev Worker id => staff role.
      */
     mapping(bytes32 workerId => StaffLib.StaffRole) private _staff;
@@ -212,18 +217,41 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
     }
 
     /**
-     * @notice Changes (or removes, with zero) a worker's wallet.
-     * @dev The company account, or staff with `MANAGE_WORKERS` over the worker's site.
+     * @notice Sets a worker's first wallet, or proposes changing (or removing, with zero) an existing one.
+     * @dev The company account, or staff with `MANAGE_WORKERS` over the worker's site. A worker without a wallet
+     * gets it at once. A worker who has one must confirm the change ({confirmWalletChange}), so nobody at the
+     * employer can redirect a worker's wages to an address of their own.
      * @param workerId Worker id.
      * @param wallet New wallet, or zero; not linked to another worker.
-     * @custom:emits WorkerWalletChanged
+     * @custom:emits WorkerWalletChanged (first wallet)
+     * @custom:emits WalletChangeProposed (existing wallet)
      */
     function setWorkerWallet(bytes32 workerId, address wallet) external {
         (WorkforceLib.Worker storage w,) = _manageWorker(workerId);
-        delete workerOfWallet[w.wallet];
-        _bindWallet(workerId, wallet);
-        w.wallet = wallet;
-        emit WorkforceLib.WorkerWalletChanged(workerId, wallet);
+        if (w.wallet == address(0)) {
+            _changeWallet(workerId, w, wallet);
+            return;
+        }
+        pendingWalletOf[workerId] = wallet;
+        emit WorkforceLib.WalletChangeProposed(workerId, wallet, msg.sender);
+    }
+
+    /**
+     * @notice Confirms the wallet change the employer proposed.
+     * @dev The worker's current wallet, or a regulator (labour inspector) when the worker lost access to it.
+     * @param workerId Worker id.
+     * @param wallet The proposed wallet (guards against a proposal changed in the meantime).
+     * @custom:emits WorkerWalletChanged
+     */
+    function confirmWalletChange(bytes32 workerId, address wallet) external {
+        WorkforceLib.Worker storage w = _workers[workerId];
+        if (w.orgId == bytes32(0)) revert WorkforceLib.WorkforceManager__UnknownWorker(workerId);
+        if (msg.sender != w.wallet && !registry.isAuthorized(msg.sender, Actions.REGULATE)) {
+            revert WorkforceLib.WorkforceManager__Unauthorized(msg.sender);
+        }
+        if (pendingWalletOf[workerId] != wallet) revert WorkforceLib.WorkforceManager__NoWalletChange(workerId);
+        delete pendingWalletOf[workerId];
+        _changeWallet(workerId, w, wallet);
     }
 
     /**
@@ -288,7 +316,7 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
     /**
      * @notice Records that workers were present at a site on a day.
      * @dev The site's company account, its staff with `RECORD_ATTENDANCE` there, or an attendance device
-     * (`REPORT_READING`). Workers already marked for that day are skipped, so a retried submission is harmless.
+     * (`REPORT_READING`) independent of the company (not one of its own accounts). Workers already marked for that day are skipped, so a retried submission is harmless.
      * @param siteId Site; every worker must be active and assigned to it.
      * @param day Day number (unix time / 1 day); not in the future and at most {MAX_ATTENDANCE_BACKDATE} days back.
      * @param workerIds Workers present.
@@ -296,7 +324,7 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
      */
     function recordAttendance(uint256 siteId, uint64 day, bytes32[] calldata workerIds) external {
         bytes32 orgId = sites.orgOfSite(siteId);
-        if (!registry.isAuthorized(msg.sender, Actions.REPORT_READING)) {
+        if (!_isIndependentDevice(orgId)) {
             (bytes32 actorOrg,) = _actor(StaffLib.RECORD_ATTENDANCE, siteId);
             if (actorOrg != orgId) revert WorkforceLib.WorkforceManager__Unauthorized(msg.sender);
         }
@@ -402,7 +430,7 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
 
     /**
      * @notice Confirms that a cash payment was received.
-     * @dev The payee's wallet, or an attendance / biometric device (`REPORT_READING`).
+     * @dev The payee's wallet, or an attendance / biometric device (`REPORT_READING`) independent of the employer.
      * @param paymentId Cash payment awaiting acknowledgement.
      * @param receiptHash Hash of the acknowledgement evidence (zero keeps the recorded receipt).
      * @custom:emits PaymentAcknowledged
@@ -413,7 +441,7 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
             revert WorkforceLib.WorkforceManager__InvalidPaymentStatus(paymentId, p.status);
         }
         if (msg.sender != p.payeeWallet || p.payeeWallet == address(0)) {
-            if (!registry.isAuthorized(msg.sender, Actions.REPORT_READING)) {
+            if (!_isIndependentDevice(p.orgId)) {
                 revert WorkforceLib.WorkforceManager__NotPayee(paymentId, msg.sender);
             }
         }
@@ -732,6 +760,28 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
         if (actorWorker == bytes32(0)) revert WorkforceLib.WorkforceManager__Unauthorized(msg.sender);
         orgId = staffOrg(msg.sender, siteId, permission);
         if (orgId == bytes32(0)) revert StaffLib.WorkforceManager__OutOfScope(msg.sender, siteId);
+    }
+
+    /**
+     * @dev Rebinds a worker's wallet.
+     * @param workerId Worker id.
+     * @param w The worker.
+     * @param wallet New wallet (zero = none).
+     */
+    function _changeWallet(bytes32 workerId, WorkforceLib.Worker storage w, address wallet) private {
+        delete workerOfWallet[w.wallet];
+        _bindWallet(workerId, wallet);
+        w.wallet = wallet;
+        emit WorkforceLib.WorkerWalletChanged(workerId, wallet);
+    }
+
+    /**
+     * @dev Whether the caller is a device / oracle account (`REPORT_READING`) outside the employer's organisation.
+     * @param employerOrg The employer.
+     * @return True if independent.
+     */
+    function _isIndependentDevice(bytes32 employerOrg) private view returns (bool) {
+        return registry.isAuthorized(msg.sender, Actions.REPORT_READING) && _orgOf(msg.sender) != employerOrg;
     }
 
     /**

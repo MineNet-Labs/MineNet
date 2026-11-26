@@ -6,6 +6,7 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IMineNetRegistry} from "src/access/interfaces/IMineNetRegistry.sol";
 import {ILotPassport} from "src/traceability/interfaces/ILotPassport.sol";
 import {ICertificateRegistry} from "src/compliance/interfaces/ICertificateRegistry.sol";
+import {IInspectionRegistry} from "src/compliance/interfaces/IInspectionRegistry.sol";
 import {Actions} from "src/access/libraries/Actions.sol";
 import {PassportLib} from "src/traceability/libraries/PassportLib.sol";
 import {SupplyChainLib} from "src/traceability/libraries/SupplyChainLib.sol";
@@ -19,9 +20,11 @@ import {SupplyChainLib} from "src/traceability/libraries/SupplyChainLib.sol";
  * - `Pickup`, `Arrival`: only through a module ({DeliveryManager}), as part of a two-party handover.
  * - `WarehouseIn` / `WarehouseOut`: WAREHOUSE holding the lot (check-in and check-out weights).
  * - `ProcessingIn`: PROCESSOR or REFINERY holding the lot (input weight).
- * - `Inspection`: INSPECTOR assigned to the lot; may attest a grade (`gradeBps`), used by escrow disputes.
+ * - `Inspection`: INSPECTOR holding the lot's open assignment ({InspectionRegistry}); may attest a grade
+ *   (`gradeBps`), used by escrow disputes.
  * - `CustomsDeclared`: CUSTOMS assigned to the lot (declared weight; required certificates attached).
- * - `CustomsReleased`: ORACLE (RRA record) or REGULATOR (where no system link exists).
+ * - `CustomsReleased`: a REGULATOR, or an ORACLE of the customs authority's organisation ({customsAuthorityOrg},
+ *   the Rwanda Revenue Authority system link). Other oracles cannot release goods from customs.
  * - `BorderExit`: CUSTOMS assigned to the lot, once released.
  * - `Audit`: any AUDITOR (read-only plus flagging); a finding raises a flag.
  * - `OracleReport`: ORACLE node independent of the lot's parties; a mismatch raises a flag.
@@ -128,6 +131,12 @@ contract SupplyChain is Pausable, ISupplyChain {
     mapping(uint256 tokenId => mapping(address account => bool)) private _platformAssigned;
 
     /**
+     * @notice Organisation of the customs authority (e.g. the Rwanda Revenue Authority) whose oracle accounts relay
+     * customs releases. Zero: only regulators can release.
+     */
+    bytes32 public customsAuthorityOrg;
+
+    /**
      * @notice Restricts a function to {MineNetRegistry} admins.
      */
     modifier onlyAdmin() {
@@ -200,6 +209,17 @@ contract SupplyChain is Pausable, ISupplyChain {
     function setInspectionAssigner(address assigner) external onlyAdmin {
         inspectionAssigner = assigner;
         emit SupplyChainLib.InspectionAssignerSet(assigner);
+    }
+
+    /**
+     * @notice Sets the customs authority whose oracle accounts may record `CustomsReleased`.
+     * @dev Only a {MineNetRegistry} admin. Zero leaves releases to regulators only.
+     * @param orgId The customs authority's organisation.
+     * @custom:emits CustomsAuthoritySet
+     */
+    function setCustomsAuthority(bytes32 orgId) external onlyAdmin {
+        customsAuthorityOrg = orgId;
+        emit SupplyChainLib.CustomsAuthoritySet(orgId);
     }
 
     /**
@@ -363,7 +383,8 @@ contract SupplyChain is Pausable, ISupplyChain {
 
     /**
      * @notice Flags a lot without a checkpoint, freezing it until a regulator resolves the flag.
-     * @dev Any auditor, or an inspector or customs agent assigned to the lot.
+     * @dev An auditor independent of the lot's owner and custodian, or an inspector or customs agent assigned to the
+     * lot. Each dismissed flag counts against the reporter ({LotPassport-dismissedFlagsOf}).
      * @param tokenId Lot.
      * @param reasonHash Hash of the reason; non-zero.
      * @return flagId Passport flag raised.
@@ -371,8 +392,11 @@ contract SupplyChain is Pausable, ISupplyChain {
      */
     function flagLot(uint256 tokenId, bytes32 reasonHash) external whenNotPaused returns (uint256 flagId) {
         if (reasonHash == bytes32(0)) revert SupplyChainLib.SupplyChain__EvidenceRequired();
+        (address lotOwner, address custodian) = _parties(tokenId);
+        bool independentAuditor = registry.isAuthorized(msg.sender, Actions.AUDIT)
+            && !registry.sameOrg(msg.sender, lotOwner) && !registry.sameOrg(msg.sender, custodian);
         if (
-            !registry.isAuthorized(msg.sender, Actions.AUDIT)
+            !independentAuditor
                 && !(isAssigned[tokenId][msg.sender]
                     && (registry.isAuthorized(msg.sender, Actions.INSPECT_LOT)
                         || registry.isAuthorized(msg.sender, Actions.FILE_CUSTOMS)))
@@ -566,7 +590,12 @@ contract SupplyChain is Pausable, ISupplyChain {
             _requireCustodian(signer, custodian, t);
         } else if (t == SupplyChainLib.CheckpointType.Inspection) {
             _requireAction(signer, Actions.INSPECT_LOT, t);
-            _requireAssigned(tokenId, signer);
+            address assigner = inspectionAssigner;
+            if (assigner == address(0)) {
+                _requireAssigned(tokenId, signer);
+            } else if (!IInspectionRegistry(assigner).isAssignmentOpen(tokenId, signer)) {
+                revert SupplyChainLib.SupplyChain__NotAssignedParticipant(tokenId, signer);
+            }
         } else if (t == SupplyChainLib.CheckpointType.CustomsDeclared || t == SupplyChainLib.CheckpointType.BorderExit)
         {
             _requireAction(signer, Actions.FILE_CUSTOMS, t);
@@ -574,7 +603,10 @@ contract SupplyChain is Pausable, ISupplyChain {
         } else if (t == SupplyChainLib.CheckpointType.CustomsReleased) {
             if (!registry.isAuthorized(signer, Actions.REGULATE)) {
                 _requireAction(signer, Actions.REPORT_READING, t);
-                _requireIndependent(tokenId, signer, lotOwner, custodian);
+                bytes32 authority = customsAuthorityOrg;
+                if (authority == bytes32(0) || registry.participant(signer).orgId != authority) {
+                    revert SupplyChainLib.SupplyChain__Unauthorized(signer, t);
+                }
             }
         } else {
             revert SupplyChainLib.SupplyChain__Unauthorized(signer, t); // Audit / OracleReport have their own functions

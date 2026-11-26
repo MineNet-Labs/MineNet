@@ -70,3 +70,9 @@ INSPECTOR role (RMB) approve inspectorate bodies and deploy inspectors in `Inspe
 - Admin transfers are two-step and delayed (`AccessControlDefaultAdminRules`). The admin must be a multisig from the first deployment.
 - The admin onboards, maps permissions and pauses. It never acts in the supply chain, edits lot history or decides disputes.
 - Only hashes and opaque ids are stored: no documents, no personal data.
+- **Company-wide suspension.** `suspendOrg` blocks every account of an organisation at once (suspending one
+  account no longer leaves the company's other accounts trading). Accounts suspended individually stay suspended
+  when the organisation is reinstated.
+- **Company payout account.** The admin can set `orgPayout` from a company's verified treasury details; escrow,
+  B2B and service proceeds and refunds owed to any of the company's accounts are credited there (`payoutOf`), so
+  no single employee receives the company's money.

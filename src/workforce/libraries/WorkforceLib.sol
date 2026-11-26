@@ -161,6 +161,14 @@ library WorkforceLib {
     event WorkerWalletChanged(bytes32 indexed workerId, address wallet);
 
     /**
+     * @notice Emitted when the employer proposes a new wallet for a worker, pending the worker's confirmation.
+     * @param workerId Worker id.
+     * @param wallet Proposed wallet.
+     * @param by Proposing account.
+     */
+    event WalletChangeProposed(bytes32 indexed workerId, address wallet, address indexed by);
+
+    /**
      * @notice Emitted when a worker moves between sites.
      * @param workerId Worker id.
      * @param fromSite Previous site.
@@ -261,6 +269,12 @@ library WorkforceLib {
      * @param workerId The worker.
      */
     error WorkforceManager__WorkerExists(bytes32 workerId);
+
+    /**
+     * @notice No such wallet change is pending for worker `workerId`.
+     * @param workerId Worker id.
+     */
+    error WorkforceManager__NoWalletChange(bytes32 workerId);
 
     /**
      * @notice Worker `workerId` does not exist.

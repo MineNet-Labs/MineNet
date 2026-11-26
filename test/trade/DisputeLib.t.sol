@@ -107,41 +107,31 @@ contract DisputeLibTest is Test {
         assertEq(uint8(v), uint8(DisputeLib.Verdict.IntegrityFailure));
     }
 
-    function test_PartyIntegrity_CountsUnlessRebutted() public pure {
+    /// The party holding the goods could write anything: its own records prove nothing by themselves.
+    function test_PartyIntegrityClaim_ProvesNothing() public pure {
         DisputeLib.Case memory c = _case();
         c.buyerFacts = _one(_seal(false, 100)); // the buyer's own word
         (DisputeLib.Verdict v,,) = _judge(c);
-        assertEq(uint8(v), uint8(DisputeLib.Verdict.IntegrityFailure), "unanswered claims stand");
+        assertEq(uint8(v), uint8(DisputeLib.Verdict.SellerWins), "a self-reported broken seal is not proof");
 
-        c.sellerFacts = _one(_fact(SupplyChainLib.CheckpointType.Inspection, true, 200)); // later, independent, Good
-        (v,,) = _judge(c);
-        assertEq(uint8(v), uint8(DisputeLib.Verdict.SellerWins), "rebutted");
-    }
-
-    function test_RebuttalMustBeLaterAndIndependent() public pure {
-        DisputeLib.Case memory c = _case();
-        c.buyerFacts = _one(_seal(false, 100));
-        c.sellerFacts = _one(_fact(SupplyChainLib.CheckpointType.Inspection, true, 50)); // earlier
-        (DisputeLib.Verdict v,,) = _judge(c);
-        assertEq(uint8(v), uint8(DisputeLib.Verdict.IntegrityFailure));
-
-        c.sellerFacts = _one(_fact(SupplyChainLib.CheckpointType.Inspection, false, 200)); // seller's own
+        c.buyerFacts = _one(_seal(true, 100)); // the same finding by an independent inspector
         (v,,) = _judge(c);
         assertEq(uint8(v), uint8(DisputeLib.Verdict.IntegrityFailure));
     }
 
-    function test_PartyWeightClaim_RebuttedByIndependentReweigh() public pure {
+    function test_PartyWeightClaim_ProvesNothing() public pure {
         DisputeLib.Case memory c = _case();
-        c.buyerFacts = _one(_weight(false, 100, 9_000, 10_000)); // buyer's scale: 10% short
-        (DisputeLib.Verdict v, uint256 refund, bool lot) = _judge(c);
+        c.buyerFacts = _one(_weight(false, 100, 9_000, 10_000)); // buyer's own scale: 10% short
+        (DisputeLib.Verdict v, uint256 refund,) = _judge(c);
+        assertEq(uint8(v), uint8(DisputeLib.Verdict.SellerWins));
+        assertEq(refund, 0);
+
+        c.buyerFacts = _one(_weight(true, 100, 9_000, 10_000)); // independent weighbridge: 10% short
+        bool lot;
+        (v, refund, lot) = _judge(c);
         assertEq(uint8(v), uint8(DisputeLib.Verdict.QualityShortfall));
         assertEq(refund, AMOUNT / 10);
         assertTrue(lot);
-
-        c.sellerFacts = _one(_weight(true, 200, 9_950, 10_000)); // weighbridge: within tolerance
-        (v, refund,) = _judge(c);
-        assertEq(uint8(v), uint8(DisputeLib.Verdict.SellerWins));
-        assertEq(refund, 0);
     }
 
     // ---------------------------------------------------------------- quality maths
