@@ -49,12 +49,12 @@ export default function IncidentsPage() {
         <StatCard deltaDir="none" icon={IconZoomCheck} tone="gray" label="Near misses" value={incidents.filter((i) => i.kind === "Near miss").length} delta="" note="reported" spark={[1, 1, 2, 1, 1, 2, 2]} />
       </div>
 
-      <Card className="pt-6">
-        <div className="flex items-center justify-between px-6">
+      <Card className="pt-5">
+        <div className="flex items-center justify-between px-5">
           <CardTitle icon={IconFirstAidKit} iconClass="text-danger">Incidents</CardTitle>
           <FilterSelect label="All statuses" options={["Open", "Investigating", "Closed"]} value={status} onChange={setStatus} />
         </div>
-        <div className="mt-4 overflow-x-auto px-3 pb-4">
+        <div className="mt-4 overflow-x-auto px-2 pb-4">
           {rows.length === 0 ? (
             <Empty>No incidents. Keep it that way.</Empty>
           ) : (

@@ -3,6 +3,7 @@
 // keeps changes in the browser until the backend API exists.
 
 import { chainSeed, type OfferMsg } from "./chain";
+import { supplySeed } from "./supplyData";
 import { teamSeed, approvalSeed } from "./roles";
 import { peopleSeed } from "./people";
 export * from "./people";
@@ -353,6 +354,8 @@ export const seed = {
   ] as Doc[],
 
   ...chainSeed,
+
+  ...supplySeed,
 
   ...peopleSeed,
 

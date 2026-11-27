@@ -17,7 +17,7 @@ export default function InsurerClientsPage() {
   return (
     <>
       <PageHeader title="Clients" subtitle="Companies that requested or hold cover with you. Only regulator-validated companies can request cover." />
-      <Card className="p-6">
+      <Card className="p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <CardTitle icon={IconBuildingCommunity} iconClass="text-[#1F5B3A]">{org.name}</CardTitle>
           <StatusBadge tone={org.status === "Validated" ? "success" : org.status === "Pending" ? "pending" : "danger"} icon={org.status === "Validated" ? IconCircleCheck : undefined}>

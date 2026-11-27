@@ -234,6 +234,9 @@ export const chainSeed = {
   } as Record<string, Record<Policy["cover"], number>>,
 
   notices: [
+    { id: "N-S003", kind: "alert", text: "Shipment SHP-2026-00329 delayed at Rusumo border", href: "/supply/shipments/SHP-2026-00329", date: "Jun 28, 2025", read: false, audience: "supply" },
+    { id: "N-S002", kind: "alert", text: "Weight discrepancy on SHP-2026-00322: weighed 80 kg, expected 85 kg", href: "/supply/shipments/SHP-2026-00322", date: "Jun 21, 2025", read: false, audience: "supply" },
+    { id: "N-S001", kind: "custody", text: "Customs asked for changes on EXP-2026-00076", href: "/supply/export/EXP-2026-00076", date: "Jun 19, 2025", read: true, audience: "supply" },
     { id: "N-0007", kind: "alert", text: "New claim CLM-0001 from Uwimana Mining Cooperative on LOT-00120: USD 720", href: "/insurer/claims/CLM-0001", date: "Aug 27, 2025", read: false, audience: "insurer:isange" },
     { id: "N-0006", kind: "offer", text: "Great Lakes Minerals Co. countered your Coltan offer OFF-0029", href: "/miner/marketplace/offers/OFF-0029", date: "Aug 29, 2025", read: false },
     { id: "N-0005", kind: "custody", text: "LOT-00117 is in transit with Volcano Freight Ltd (seal SL-48812)", href: "/miner/mineral-lots/LOT-00117", date: "Aug 28, 2025", read: false },

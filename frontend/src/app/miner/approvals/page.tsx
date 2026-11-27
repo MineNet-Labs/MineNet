@@ -29,10 +29,10 @@ export default function ApprovalsPage() {
         }
       />
       <Card className="pt-5">
-        <div className="border-b border-gray-100 px-6">
+        <div className="border-b border-gray-100 px-5">
           <Tabs value={tab} onChange={setTab} items={["Pending", "Approved", "Rejected", "All"].map((k) => ({ key: k, label: k }))} />
         </div>
-        <div className="px-3 py-4">
+        <div className="px-2 py-4">
           {rows.length === 0 ? (
             <Empty>{tab === "Pending" ? "Nothing waiting for approval." : "No requests here."}</Empty>
           ) : (

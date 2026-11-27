@@ -19,9 +19,9 @@ export default function CoverRequestsPage() {
   return (
     <>
       <PageHeader title="Cover Requests" subtitle="Miners asking you to cover a lot in storage or transit. Check the lot's passport, then quote or decline." />
-      <Card className="pt-6">
-        <div className="px-6"><CardTitle icon={IconInbox} iconClass="text-accent">Waiting for a quote</CardTitle></div>
-        <div className="mt-4 overflow-x-auto px-3 pb-4">
+      <Card className="pt-5">
+        <div className="px-5"><CardTitle icon={IconInbox} iconClass="text-accent">Waiting for a quote</CardTitle></div>
+        <div className="mt-4 overflow-x-auto px-2 pb-4">
           {requests.length === 0 ? (
             <Empty>No cover requests waiting.</Empty>
           ) : (

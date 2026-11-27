@@ -63,8 +63,8 @@ export default function MineShaftsPage() {
         <StatCard icon={IconRuler} tone="violet" label="Average Depth" value={`${avgDepth} m`} delta="+4 m" spark={[3, 3.2, 3.6, 4, 4.4, 4.8, 5.2]} />
       </div>
 
-      <Card className="pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6">
+      <Card className="pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5">
           <CardTitle icon={IconBuildingFactory2}>All Shafts</CardTitle>
           <div className="flex gap-2">
             <FilterSelect label="All sites" options={sites.map((s) => s.name)} value={site} onChange={setSite} />
@@ -89,7 +89,7 @@ export default function MineShaftsPage() {
             </button>
           </div>
         </div>
-        <div className="mt-5 overflow-x-auto px-3">
+        <div className="mt-5 overflow-x-auto px-2">
           {page.length === 0 ? (
             <Empty>No shafts match these filters.</Empty>
           ) : (

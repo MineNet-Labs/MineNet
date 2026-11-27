@@ -154,7 +154,7 @@ export default function ExtractionRecordsPage() {
             </CardTitle>
             <p className="mt-5 flex items-center gap-3 font-heading text-[34px] font-bold">{fmtNum(approvedKg)} kg <LiveBadge /></p>
             <p className="text-[15px] text-ink/70">Approved, last {monthly.labels.length} months</p>
-            <div className="mt-2 px-6">
+            <div className="mt-2 px-5">
               <AreaChart height={150} unit=" t" xLabels={monthly.labels} series={[{ name: "Extracted", color: "#B5551A", values: monthly.totals, fillOpacity: 0.12 }]} />
             </div>
           </Card>

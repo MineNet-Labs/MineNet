@@ -1,7 +1,21 @@
 // Client-side file downloads (CSV exports, generated documents).
 
+import { buildPDF } from "./pdf";
+
+/**
+ * Downloads a generated file. Documents and reports (.txt content) are saved
+ * as PDF: the first line becomes the title. CSV exports stay CSV.
+ */
 export function downloadFile(fileName: string, content: string, type = "text/plain") {
-  const blob = new Blob([content], { type });
+  if (fileName.endsWith(".txt")) {
+    const [title, ...rest] = content.split("\n");
+    while (rest[0] === "") rest.shift();
+    return save(fileName.replace(/\.txt$/, ".pdf"), buildPDF(title.trim(), rest));
+  }
+  save(fileName, new Blob([content], { type }));
+}
+
+function save(fileName: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

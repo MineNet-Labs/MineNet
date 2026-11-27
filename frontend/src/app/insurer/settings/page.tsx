@@ -29,7 +29,7 @@ export default function InsurerSettingsPage() {
           toast("Settings saved");
         }}
       >
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconBuilding} iconClass="text-[#1F5B3A]">Company</CardTitle>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <Field label="Name"><input value={me.name} readOnly className={`${inputClass} bg-page`} /></Field>
@@ -38,7 +38,7 @@ export default function InsurerSettingsPage() {
           </div>
           <p className="mt-3 text-xs text-ink/60">Name and licence come from your BNR validation.</p>
         </Card>
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconPercentage} iconClass="text-accent">Monthly premium rates</CardTitle>
           <div className="mt-5 grid gap-4 sm:grid-cols-3">
             {COVERS.map((c) => (

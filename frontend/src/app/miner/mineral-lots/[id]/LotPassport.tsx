@@ -130,30 +130,31 @@ export function LotPassport() {
   ];
 
   const downloadPassport = () => {
-    const passport = {
-      lot: { ...lot, site: site?.name },
-      token: {
-        id: tokenId(lot.id),
-        contract: PASSPORT_CONTRACT,
-        owner: state.org.wallet,
-      },
-      custody,
-      events: timeline,
-      transfers,
-      escrows,
-      loans,
-      policies,
-      documents: docs.map((d) => ({
-        name: d.name,
-        number: d.number,
-        file: d.fileName,
-      })),
-    };
-    downloadFile(
-      `passport-${lot.id}.json`,
-      JSON.stringify(passport, null, 2),
-      "application/json",
-    );
+    const lines = [
+      `MINERAL LOT PASSPORT · ${lot.id}`,
+      "",
+      `Mineral: ${lot.mineral} · ${lot.quantityKg} kg · grade ${lot.grade ?? "—"}`,
+      `Site: ${site?.name ?? lot.siteId} · Status: ${lot.status}`,
+      `Token: ${tokenId(lot.id)} on ${PASSPORT_CONTRACT}`,
+      `Owner wallet: ${state.org.wallet}`,
+      `Current custody: ${custody.holder} at ${custody.place}`,
+      "",
+      "SIGNED EVENTS",
+      ...timeline.map((e) => `  ${e.date}  ${e.kind} by ${e.actor}${e.detail ? ` · ${e.detail}` : ""}  [${e.hash.slice(0, 18)}…]`),
+      "",
+      "HANDOVERS",
+      ...(transfers.length ? transfers.map((t) => `  ${t.id}  ${t.from} -> ${t.to} · seal ${t.seal} · ${t.status}`) : ["  None"]),
+      "",
+      "ESCROW, LOANS AND INSURANCE",
+      ...escrows.map((e) => `  Escrow ${e.id}: ${e.currency} ${e.amount} · ${e.status}`),
+      ...loans.map((l) => `  Loan ${l.id}: ${l.currency} ${l.amount} · ${l.status}`),
+      ...policies.map((p) => `  Policy ${p.id}: ${p.cover} · ${p.status}`),
+      ...(escrows.length + loans.length + policies.length ? [] : ["  None"]),
+      "",
+      "DOCUMENTS",
+      ...(docs.length ? docs.map((d) => `  ${d.name} · ${d.number}`) : ["  None"]),
+    ];
+    downloadFile(`passport-${lot.id}.txt`, lines.join("\n"));
     toast(`Passport for ${lot.id} downloaded`);
   };
 
@@ -255,7 +256,7 @@ export function LotPassport() {
       </div>
 
       {/* Journey */}
-      <Card className="p-6">
+      <Card className="p-5">
         <ol className="grid grid-cols-5 gap-2">
           {STAGES.map((s, i) => (
             <li
@@ -282,7 +283,7 @@ export function LotPassport() {
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
         <div className="space-y-5">
           {/* Passport summary */}
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconFileText} iconClass="text-[#1F5B3A]">
               Digital passport
             </CardTitle>
@@ -317,7 +318,7 @@ export function LotPassport() {
           </Card>
 
           {/* Timeline */}
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconRoute} iconClass="text-[#B5551A]">
               Signed event history
             </CardTitle>
@@ -345,8 +346,8 @@ export function LotPassport() {
           </Card>
 
           {/* Custody */}
-          <Card className="pt-6">
-            <div className="flex items-center justify-between px-6">
+          <Card className="pt-5">
+            <div className="flex items-center justify-between px-5">
               <CardTitle icon={IconTruck} iconClass="text-[#1F5B3A]">
                 Custody handovers
               </CardTitle>
@@ -360,7 +361,7 @@ export function LotPassport() {
                 </button>
               )}
             </div>
-            <div className="mt-4 overflow-x-auto px-3 pb-4">
+            <div className="mt-4 overflow-x-auto px-2 pb-4">
               {transfers.length === 0 ? (
                 <Empty>
                   The lot is still at the mine site. Dispatch it when it leaves.
@@ -510,7 +511,7 @@ export function LotPassport() {
 
         <div className="space-y-5">
           {/* AI: listing readiness */}
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconSparkles} iconClass="text-violet">
               Ready to list?
             </CardTitle>
@@ -553,7 +554,7 @@ export function LotPassport() {
           </Card>
 
           {/* AI: price guidance */}
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconSparkles} iconClass="text-violet">
               Price guidance
             </CardTitle>
@@ -571,7 +572,7 @@ export function LotPassport() {
           </Card>
 
           {/* AI: anomalies */}
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconAlertTriangle} iconClass="text-danger">
               Anomaly checks
             </CardTitle>
@@ -594,7 +595,7 @@ export function LotPassport() {
           </Card>
 
           {/* Money */}
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconLock} iconClass="text-violet">
               Escrow, loans & cover
             </CardTitle>
@@ -687,7 +688,7 @@ export function LotPassport() {
           </Card>
 
           {/* Documents & inspections */}
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconShieldCheck}>
               Inspections & documents
             </CardTitle>

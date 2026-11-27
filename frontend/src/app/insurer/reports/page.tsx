@@ -45,7 +45,7 @@ export default function InsurerReportsPage() {
           <Card key={k} className="p-5"><p className="text-sm text-ink/70">{k}</p><p className="mt-1 font-heading text-2xl font-bold">{v}</p></Card>
         ))}
       </div>
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle icon={IconFileSpreadsheet} iconClass="text-[#1F5B3A]">Downloads</CardTitle>
         <ul className="mt-4 divide-y divide-gray-100">
           {reports.map((r) => (

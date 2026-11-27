@@ -81,8 +81,8 @@ export default function AttendancePage() {
         <StatCard deltaDir="none" icon={IconUserOff} tone="gray" label="Not marked" value={unmarked} delta="" note={`of ${active.length} active`} spark={[2, 1, 1, 0, 1, 0, 0]} />
       </div>
 
-      <Card className="pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6">
+      <Card className="pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5">
           <CardTitle icon={IconCalendarCheck} iconClass="text-[#1F5B3A]">{new Date(date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</CardTitle>
           <div className="flex gap-3">
             <FilterSelect label="All sites" options={sites.map((s) => s.name)} value={site} onChange={setSite} />
@@ -104,7 +104,7 @@ export default function AttendancePage() {
             </button>
           </div>
         </div>
-        <div className="mt-4 overflow-x-auto px-3 pb-4">
+        <div className="mt-4 overflow-x-auto px-2 pb-4">
           {active.length === 0 ? (
             <Empty>No active workers.</Empty>
           ) : (

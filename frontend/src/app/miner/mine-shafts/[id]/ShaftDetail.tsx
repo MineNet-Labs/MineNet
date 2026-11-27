@@ -48,7 +48,7 @@ export function ShaftDetail() {
         }
       />
 
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle icon={IconPick} iconClass="text-[#1F5B3A]">Shaft</CardTitle>
         <div className="mt-5">
           <Facts
@@ -68,9 +68,9 @@ export function ShaftDetail() {
       </Card>
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
-        <Card className="pt-6">
-          <div className="px-6"><CardTitle icon={IconClipboardList} iconClass="text-[#B5551A]">Extraction records</CardTitle></div>
-          <div className="mt-4 overflow-x-auto px-3 pb-4">
+        <Card className="pt-5">
+          <div className="px-5"><CardTitle icon={IconClipboardList} iconClass="text-[#B5551A]">Extraction records</CardTitle></div>
+          <div className="mt-4 overflow-x-auto px-2 pb-4">
             {records.length === 0 ? (
               <Empty>No extraction records for this shaft yet.</Empty>
             ) : (
@@ -91,7 +91,7 @@ export function ShaftDetail() {
             )}
           </div>
         </Card>
-        <Card className="self-start p-6">
+        <Card className="self-start p-5">
           <CardTitle icon={IconShieldCheck}>Inspections</CardTitle>
           <ul className="mt-4 space-y-2 text-sm">
             {inspections.map((i) => (

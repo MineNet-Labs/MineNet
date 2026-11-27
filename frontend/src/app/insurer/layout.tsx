@@ -8,13 +8,13 @@ import { ConfirmHost } from "@/components/ui/Confirm";
 // the backend exists.
 export default function InsurerLayout({ children }: LayoutProps<"/insurer">) {
   return (
-    <div className="flex min-h-screen gap-6 bg-page p-3 lg:p-4">
+    <div className="flex min-h-screen gap-5 bg-page p-3 lg:p-4">
       <div className="hidden lg:flex">
         <Suspense fallback={<div className="w-[208px] shrink-0 rounded-[28px] bg-white" />}>
           <Sidebar items={insurerNav} home="/insurer" />
         </Suspense>
       </div>
-      <div className="min-w-0 flex-1 space-y-6 pb-24 lg:pr-2">
+      <div className="min-w-0 flex-1 space-y-5 pb-24 lg:pr-2">
         <Suspense fallback={<div className="h-12" />}>
           <InsurerTopbar />
         </Suspense>

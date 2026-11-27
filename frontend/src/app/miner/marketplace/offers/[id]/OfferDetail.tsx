@@ -72,7 +72,7 @@ export function OfferDetail() {
       />
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconMessage} iconClass="text-[#1F5B3A]">Negotiation</CardTitle>
           <ol className="mt-5 space-y-3">
             {history.map((m, i) => (
@@ -124,7 +124,7 @@ export function OfferDetail() {
         </Card>
 
         <div className="space-y-5">
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle>Your lot</CardTitle>
             <div className="mt-4">
               <Facts
@@ -138,7 +138,7 @@ export function OfferDetail() {
               />
             </div>
           </Card>
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle>Buyer request</CardTitle>
             <div className="mt-4">
               <Facts
@@ -155,7 +155,7 @@ export function OfferDetail() {
             </div>
           </Card>
           {guide && (
-            <Card className="p-6">
+            <Card className="p-5">
               <CardTitle>Price guidance</CardTitle>
               <p className="mt-3 font-heading text-xl font-bold">${guide.low} – ${guide.high} / kg</p>
               <p className="mt-1 text-xs text-ink/60">{guide.basis}</p>

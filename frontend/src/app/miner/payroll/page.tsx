@@ -122,7 +122,7 @@ export default function PayrollPage() {
       </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-[300px_1fr]">
-        <Card className="p-4">
+        <Card className="p-5">
           <CardTitle icon={IconFileInvoice}>Pay runs</CardTitle>
           <ul className="mt-3 space-y-1.5">
             {payruns.map((r) => (
@@ -137,12 +137,12 @@ export default function PayrollPage() {
           </ul>
         </Card>
 
-        <Card className="pt-6">
+        <Card className="pt-5">
           {!run ? (
             <div className="p-6"><Empty>Prepare a payroll to see it here.</Empty></div>
           ) : (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-3 px-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5">
                 <CardTitle icon={IconCash} iconClass="text-[#1F5B3A]">{monthLabel(run.month)} · {run.id}</CardTitle>
                 <div className="flex gap-2">
                   <button
@@ -170,7 +170,7 @@ export default function PayrollPage() {
                   )}
                 </div>
               </div>
-              <div className="mt-4 overflow-x-auto px-3 pb-4">
+              <div className="mt-4 overflow-x-auto px-2 pb-4">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-head">
                     <tr>{["Worker", "Category", "Days", "Daily rate", "Gross", "RSSB 3%", "Net", ""].map((h) => <th key={h} className="px-3 py-3 text-[13px] font-medium">{h}</th>)}</tr>

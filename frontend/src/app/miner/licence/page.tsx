@@ -70,7 +70,7 @@ export default function LicencePage() {
       />
 
       <div className="grid items-start gap-5 xl:grid-cols-[1.3fr_1fr]">
-        <Card className="p-6">
+        <Card className="p-5">
           <div className="flex items-start justify-between gap-4">
             <CardTitle icon={IconBuildingBank} iconClass="text-[#1F5B3A]">Organisation validation</CardTitle>
             <StatusBadge tone={orgTone[org.status]}>{org.status}</StatusBadge>
@@ -126,7 +126,7 @@ export default function LicencePage() {
         </Card>
 
         <div className="space-y-5">
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconWallet} iconClass="text-[#B5551A]">Signing wallet</CardTitle>
             <p className="mt-3 text-sm text-ink/70">Every event you sign on a lot passport comes from this wallet.</p>
             <div className="mt-4 flex items-center gap-2 rounded-xl bg-page px-4 py-3">
@@ -148,7 +148,7 @@ export default function LicencePage() {
             </p>
           </Card>
 
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconCertificate}>What your status allows</CardTitle>
             <ul className="mt-4 space-y-3 text-sm">
               {[
@@ -182,8 +182,8 @@ export default function LicencePage() {
         </div>
       </div>
 
-      <Card className="pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6">
+      <Card className="pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5">
           <CardTitle icon={IconMapPin} iconClass="text-[#1F5B3A]">Site licences</CardTitle>
           <div className="flex gap-2 text-sm">
             <StatusBadge tone="success">{counts.Valid} valid</StatusBadge>
@@ -191,7 +191,7 @@ export default function LicencePage() {
             <StatusBadge tone="danger">{counts.Expired} expired</StatusBadge>
           </div>
         </div>
-        <div className="mt-5 overflow-x-auto px-3 pb-4">
+        <div className="mt-5 overflow-x-auto px-2 pb-4">
           <table className="w-full text-left text-sm">
             <thead className="bg-head">
               <tr>{["Site", "District", "Licence", "Expires", "Status", "Lot registration", ""].map((h) => <th key={h} className="px-3 py-3 text-[13px] font-medium">{h}</th>)}</tr>

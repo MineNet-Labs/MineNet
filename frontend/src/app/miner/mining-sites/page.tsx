@@ -100,8 +100,8 @@ export default function MiningSitesPage() {
       </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_400px]">
-        <Card className="pt-6 pb-1">
-          <div className="px-6">
+        <Card className="pt-5 pb-1">
+          <div className="px-5">
             <CardTitle
               icon={IconMapPin}
               action={
@@ -159,7 +159,7 @@ export default function MiningSitesPage() {
         </Card>
 
         <div className="space-y-5">
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconMapPin}>Sites Overview</CardTitle>
             <RwandaMap sites={mapSites} className="mt-4" height={340} valueLabel="Lots" />
             <ul className="mt-3 flex gap-6 text-sm">
@@ -176,7 +176,7 @@ export default function MiningSitesPage() {
             </div>
           </Card>
 
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconBolt}>Quick Actions</CardTitle>
             <div className="mt-5 grid grid-cols-2 gap-3">
               <button onClick={() => setModal("map")} className="flex items-center justify-center gap-2 rounded-2xl border border-[#f6d6bd] bg-accent-soft py-3 text-[15px] text-accent hover:brightness-95">

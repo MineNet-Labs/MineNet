@@ -17,8 +17,8 @@ export default function InsurerPoliciesPage() {
   return (
     <>
       <PageHeader title="Policies" subtitle="Quotes you sent and policies in force." />
-      <Card className="pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6">
+      <Card className="pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5">
           <CardTitle icon={IconFileCertificate} iconClass="text-[#0e7490]">All policies</CardTitle>
           <div className="flex gap-3">
             <FilterSelect label="All statuses" options={["Quoted", "Active", "Expired", "Declined"]} value={status} onChange={setStatus} />
@@ -35,7 +35,7 @@ export default function InsurerPoliciesPage() {
             </button>
           </div>
         </div>
-        <div className="mt-4 overflow-x-auto px-3 pb-4">
+        <div className="mt-4 overflow-x-auto px-2 pb-4">
           {rows.length === 0 ? (
             <Empty>No policies match.</Empty>
           ) : (

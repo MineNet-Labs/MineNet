@@ -101,23 +101,24 @@ export function StatCard({
   const Arrow = deltaDir === "down" ? ArrowDown : ArrowUp;
   const dClass = deltaClass ?? (deltaDir === "down" ? "text-accent" : "text-[#1F5B3A]");
   return (
-    <Card className="relative flex items-center gap-4 overflow-hidden px-4 py-5">
+    <Card className="flex items-center gap-4 overflow-hidden px-5 py-5">
       <span className={`grid size-14 shrink-0 place-items-center rounded-full ${t.chip}`}>
         <Icon className={`size-6 ${t.icon}`} strokeWidth={1.9} />
       </span>
-      <div className="min-w-0">
-        <p className="truncate text-[15px] font-medium text-ink" title={label}>{label}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] leading-snug font-medium text-ink">{label}</p>
         <p className="font-heading text-[28px] leading-tight font-bold text-ink">{value}</p>
         {delta !== undefined && (
-          <p className={`flex items-center gap-1 text-[13px] ${dClass}`}>
+          <p className={`flex flex-wrap items-center gap-x-1 text-[13px] ${dClass}`}>
             {deltaDir !== "none" && <Arrow className="size-3.5" strokeWidth={2.5} />}
             <span>{delta}</span>
-            <span className="ml-1 text-ink/70">{note}</span>
+            <span className="text-ink/70">{note}</span>
           </p>
         )}
       </div>
-      <div className="absolute right-0 bottom-0">
-        <Sparkline values={spark} color={toneStyles[sparkTone ?? tone].line} />
+      {/* In the flow (not on top of the text), so it never covers the numbers. */}
+      <div className="-mr-5 -mb-5 shrink-0 self-end">
+        <Sparkline values={spark} color={toneStyles[sparkTone ?? tone].line} width={72} />
       </div>
     </Card>
   );

@@ -41,7 +41,7 @@ export function Pagination({
 }) {
   const base = "grid size-9 place-items-center rounded-full border text-sm disabled:opacity-40";
   return (
-    <div className="flex items-center justify-between px-6 py-5">
+    <div className="flex items-center justify-between px-5 py-5">
       <p className="text-[15px] text-ink/80">
         {total ? `Showing ${from}-${to} of ${total} ${noun}` : `No ${noun} match these filters`}
       </p>

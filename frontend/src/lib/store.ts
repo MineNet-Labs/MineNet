@@ -8,7 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { seed, type AppData } from "./data";
 
-const KEY = "minenet.data.v5";
+const KEY = "minenet.data.v7";
 let state: AppData = seed;
 let loaded = false;
 const listeners = new Set<() => void>();

@@ -35,7 +35,7 @@ export function RequestDetail() {
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
         <div className="space-y-5">
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconShoppingCart} iconClass="text-[#1F5B3A]">Request</CardTitle>
             <div className="mt-5">
               <Facts
@@ -59,9 +59,9 @@ export function RequestDetail() {
             <p className="mt-5 rounded-xl bg-page px-4 py-3 text-sm">{req.notes}</p>
           </Card>
 
-          <Card className="pt-6">
-            <div className="px-6"><CardTitle icon={IconSend2}>Your offers on this request</CardTitle></div>
-            <div className="mt-4 px-3 pb-4">
+          <Card className="pt-5">
+            <div className="px-5"><CardTitle icon={IconSend2}>Your offers on this request</CardTitle></div>
+            <div className="mt-4 px-2 pb-4">
               {mine.length === 0 ? (
                 <Empty>You haven&apos;t made an offer yet.</Empty>
               ) : (
@@ -80,7 +80,7 @@ export function RequestDetail() {
           </Card>
         </div>
 
-        <Card className="self-start p-6">
+        <Card className="self-start p-5">
           <CardTitle icon={IconBox} iconClass="text-[#B5551A]">Your matching lots</CardTitle>
           {matching.length === 0 ? (
             <p className="mt-4 text-sm text-ink/70">No verified {req.mineral} lots. Register one and get it inspected.</p>

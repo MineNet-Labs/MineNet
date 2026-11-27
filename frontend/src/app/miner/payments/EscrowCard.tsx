@@ -17,8 +17,8 @@ export function EscrowCard() {
   const repaid = escrows.reduce((n, e) => n + (e.lienRepaid ?? 0), 0);
 
   return (
-    <Card className="pt-6">
-      <div className="px-6">
+    <Card className="pt-5">
+      <div className="px-5">
         <CardTitle icon={IconLock} iconClass="text-violet">Escrow</CardTitle>
         <p className="mt-1 text-sm text-ink/70">When a buyer purchases, their payment is locked. It is released to you when they accept delivery, after repaying any loan on the lot.</p>
         <div className="mt-5 grid grid-cols-3 gap-4">
@@ -36,7 +36,7 @@ export function EscrowCard() {
           </div>
         </div>
       </div>
-      <div className="mt-5 overflow-x-auto px-3 pb-4">
+      <div className="mt-5 overflow-x-auto px-2 pb-4">
         {escrows.length === 0 ? (
           <Empty>No escrow yet. It starts when a buyer accepts one of your offers.</Empty>
         ) : (

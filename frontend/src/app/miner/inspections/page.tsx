@@ -83,15 +83,15 @@ export default function InspectionsPage() {
         actions={<PrimaryButton icon={IconPlus} className="rounded-full py-3.5" onClick={() => openForm("inspection")}>Request Inspection</PrimaryButton>}
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
         <StatCard icon={IconClipboardCheck} tone="orange" label="Total Requests" value={inspections.length} delta="+4" spark={[3, 4, 3.5, 6, 5, 7, 9]} />
         <StatCard icon={IconCircleCheck} tone="green" label="Completed" value={count("Completed")} delta="+12%" spark={[3, 4, 3.5, 5, 5.5, 7, 9]} />
         <StatCard icon={IconCalendarTime} tone="violet" label="Scheduled" value={count("Scheduled")} delta="+2" spark={[3, 4, 3, 6, 5, 6.5, 8]} />
         <StatCard icon={IconHourglass} tone="orange" label="Awaiting Review" value={count("Pending") + count("In Progress")} delta="-1" deltaDir="down" deltaClass="text-danger" spark={[3, 4, 3, 6, 4, 6.5, 4.5]} />
       </div>
 
-      <Card className="overflow-hidden pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6">
+      <Card className="overflow-hidden pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5">
           <h3 className="flex items-center gap-3 font-sans text-lg font-semibold"><IconShieldCheck className="size-5 text-accent" /> Inspection Requests</h3>
           <div className="flex gap-2">
             <FilterSelect label="All minerals" options={[...new Set(inspections.map((i) => i.mineral))]} value={mineral} onChange={setMineral} />
@@ -104,7 +104,7 @@ export default function InspectionsPage() {
           <Tabs items={tabs.map((t) => ({ key: t, label: t, count: count(t) }))} value={tab} onChange={setTab} />
         </div>
 
-        <div className="overflow-x-auto px-3">
+        <div className="overflow-x-auto px-2">
           {page.length === 0 ? (
             <Empty>No inspection requests match these filters.</Empty>
           ) : (

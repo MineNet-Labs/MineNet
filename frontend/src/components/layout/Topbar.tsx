@@ -21,6 +21,7 @@ import {
   IconMapPin,
   IconRefresh,
   IconSearch,
+  IconTruck,
   IconUmbrella,
   IconUser,
   IconUsers,
@@ -174,11 +175,11 @@ export function Topbar() {
         >
           {(close) => (
             <>
-              <div className="px-3 pt-2 pb-2">
+              <div className="px-2 pt-2 pb-2">
                 <p className="text-sm font-semibold">{me.name}</p>
                 <p className="text-xs text-ink/60">{me.role} · {orgName}</p>
               </div>
-              <div className="border-t border-gray-100 px-3 pt-2 pb-1">
+              <div className="border-t border-gray-100 px-2 pt-2 pb-1">
                 <p className="text-[11px] font-medium tracking-wide text-ink/50 uppercase">Demo: view as</p>
               </div>
               {members.filter((m) => m.status === "Active").map((m) => (
@@ -196,6 +197,7 @@ export function Topbar() {
                 </MenuItem>
               ))}
               <MenuItem icon={IconUmbrella} onClick={() => (close(), router.push("/insurer"))}>Insurer portal (demo)</MenuItem>
+              <MenuItem icon={IconTruck} onClick={() => (close(), router.push("/supply"))}>Supply chain portal (demo)</MenuItem>
               <div className="border-t border-gray-100 pt-1">
                 <MenuItem icon={IconUser} onClick={() => (close(), router.push("/miner/settings"))}>Settings</MenuItem>
                 <MenuItem icon={IconHeadphones} onClick={() => (close(), router.push("/miner/support"))}>Help & support</MenuItem>

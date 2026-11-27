@@ -59,10 +59,10 @@ export default function LeavePage() {
       </div>
 
       <Card className="pt-5">
-        <div className="border-b border-gray-100 px-6">
+        <div className="border-b border-gray-100 px-5">
           <Tabs value={tab} onChange={setTab} items={["Pending", "Approved", "Rejected", "All"].map((k) => ({ key: k, label: k, count: k === "All" ? leaves.length : leaves.filter((l) => l.status === k).length }))} />
         </div>
-        <div className="overflow-x-auto px-3 py-4">
+        <div className="overflow-x-auto px-2 py-4">
           {rows.length === 0 ? (
             <Empty>No {tab === "All" ? "" : tab.toLowerCase()} leave requests.</Empty>
           ) : (
@@ -104,7 +104,7 @@ export default function LeavePage() {
         </div>
       </Card>
 
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle icon={IconBeach}>Leave balance (annual, 18 days per year)</CardTitle>
         <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
           {workers.filter((w) => w.status === "Active").map((w) => {
