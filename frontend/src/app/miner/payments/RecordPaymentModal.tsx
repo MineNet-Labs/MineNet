@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Select } from "@/components/ui/Select";
 import { CancelButton, Field, Modal, StatusBadge, SubmitButton, formValues, inputClass, toast } from "@/components/ui";
 import { MONTHS } from "@/lib/data";
 import { getState, siteName, update, useStore } from "@/lib/store";
@@ -50,9 +51,9 @@ export function RecordPaymentModal({ onClose }: { onClose: () => void }) {
         }}
       >
         <Field label="Worker">
-          <select value={workerId} onChange={(e) => setWorkerId(e.target.value)} className={inputClass}>
+          <Select value={workerId} onChange={(e) => setWorkerId(e.target.value)} className={inputClass}>
             {workers.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.id}</option>)}
-          </select>
+          </Select>
         </Field>
 
         {w && (
@@ -68,13 +69,13 @@ export function RecordPaymentModal({ onClose }: { onClose: () => void }) {
           <Field label="Amount (RWF)"><input name="amount" type="number" min={1} required inputMode="numeric" className={inputClass} /></Field>
           <Field label="Payment period"><input name="period" type="month" required defaultValue="2025-08" className={inputClass} /></Field>
           <Field label="Payment method">
-            <select name="method" required defaultValue="" className={inputClass}>
+            <Select name="method" required defaultValue="" className={inputClass}>
               <option value="" disabled>Select method</option>
               <option>MTN Mobile Money</option>
               <option>Airtel Money</option>
               <option>Bank Transfer</option>
               <option>Cash</option>
-            </select>
+            </Select>
           </Field>
           <Field label="Payment date"><input name="date" type="date" required className={inputClass} /></Field>
         </div>

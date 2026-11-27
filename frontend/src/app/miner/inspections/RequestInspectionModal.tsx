@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { Select } from "@/components/ui/Select";
 import { IconCloudUpload, IconFileText, IconX } from "@tabler/icons-react";
 import { CancelButton, Field, Modal, SubmitButton, inputClass, toast } from "@/components/ui";
 import { getState, nextId, update, useStore } from "@/lib/store";
+import { makeEvent } from "@/lib/domain";
 
 const types = [
   { key: "Grade Verification", desc: "Confirms the declared grade of the lot" },
@@ -12,11 +14,11 @@ const types = [
   { key: "Pre-export Certification", desc: "Full inspection for an export certificate" },
 ];
 
-export function RequestInspectionModal({ onClose }: { onClose: () => void }) {
+export function RequestInspectionModal({ onClose, initialLot = "" }: { onClose: () => void; initialLot?: string }) {
   const lots = useStore((s) => s.lots);
   const shafts = useStore((s) => s.shafts);
   const [type, setType] = useState(types[0].key);
-  const [lotId, setLotId] = useState("");
+  const [lotId, setLotId] = useState(initialLot);
   const [files, setFiles] = useState(["Extraction_Record_N03_Aug.pdf", "Mining_Licence_ML-2025-087.pdf"]);
   const lot = lots.find((l) => l.id === lotId);
 
@@ -51,6 +53,7 @@ export function RequestInspectionModal({ onClose }: { onClose: () => void }) {
               },
               ...s.inspections,
             ],
+            events: [...s.events, makeEvent(s, lot.id, "Inspection requested", s.org.contact, "Miner", `${type} requested`)],
           }));
           toast(`Inspection ${id} requested for ${lot.id}`);
           onClose();
@@ -72,10 +75,10 @@ export function RequestInspectionModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <Field label="Mineral lot">
-          <select required value={lotId} onChange={(e) => setLotId(e.target.value)} className={inputClass}>
+          <Select required value={lotId} onChange={(e) => setLotId(e.target.value)} className={inputClass}>
             <option value="" disabled>Select a lot to inspect</option>
             {lots.map((l) => <option key={l.id} value={l.id}>{l.id} · {l.mineral} · {l.status}</option>)}
-          </select>
+          </Select>
         </Field>
 
         <div className="grid grid-cols-2 gap-3">

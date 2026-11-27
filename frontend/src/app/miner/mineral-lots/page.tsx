@@ -1,5 +1,13 @@
 "use client";
 
+import { openForm } from "@/components/FormHost";
+
+import { can } from "@/lib/roles";
+
+import { mineralColor } from "@/lib/series";
+
+import { AnomalyCard } from "@/components/AnomalyCard";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
@@ -40,9 +48,9 @@ import {
 } from "@/components/ui";
 import { Donut } from "@/components/ui/charts";
 import { RwandaMap, type MapSite } from "@/components/ui/RwandaMap";
-import { CreateLotModal, ListLotModal } from "@/components/forms";
+import { CreateLotModal } from "@/components/forms";
 import { fmtKg, type Lot } from "@/lib/data";
-import { siteName, useStore } from "@/lib/store";
+import { siteName, useStore, useMe } from "@/lib/store";
 import { downloadCSV } from "@/lib/csv";
 import { useQueryParam } from "@/lib/useQueryParam";
 
@@ -56,14 +64,13 @@ const mineralChip: Record<string, string> = {
 };
 
 export default function MineralLotsPage() {
+  const me = useMe();
   const router = useRouter();
   const state = useStore((s) => s);
   const { lots, sites } = state;
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState<"create" | "history" | null>(null);
-  const [sellLot, setSellLot] = useState<string | null>(null);
-  const [view, setView] = useState<Lot | null>(null);
   useQueryParam("q", useCallback((v: string) => setSearch(v), []));
 
   const rows = useMemo(
@@ -81,7 +88,7 @@ export default function MineralLotsPage() {
     const m = new Map<string, number>();
     lots.forEach((l) => m.set(l.mineral, (m.get(l.mineral) ?? 0) + l.quantityKg));
     const total = [...m.values()].reduce((a, b) => a + b, 0) || 1;
-    return [...m].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, kg]) => ({ name, pct: Math.round((kg / total) * 100) }));
+    return [...m].sort((a, b) => b[1] - a[1]).map(([name, kg]) => ({ name, pct: Math.round((kg / total) * 100) }));
   }, [lots]);
 
   const mapSites: MapSite[] = useMemo(
@@ -117,14 +124,14 @@ export default function MineralLotsPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={IconBox} tone="green" label="Total Lots" value={lots.length} delta="+10%" note="from last period" spark={[3, 4, 3.5, 5, 3, 6, 8]} />
         <StatCard icon={IconShieldCheck} tone="green" label="Verified Lots" value={verified} delta="+7%" note="from last period" spark={[3, 4, 3.5, 5, 3, 6, 8]} />
         <StatCard icon={IconClock} tone="orange" label="Pending Verifications" value={pending} delta="-13" deltaDir="down" note="from last period" spark={[3, 3.5, 3.2, 4, 3.8, 5, 8]} />
         <StatCard icon={IconMapPin} tone="green" label="Active Sites" value={sites.filter((s) => s.status === "Active").length} delta="+1" note="from last period" spark={[3, 4, 3.5, 5, 3, 6, 8]} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[394px_1fr]">
+      <div className="grid items-start gap-5 xl:grid-cols-[394px_1fr]">
         <Card className="p-6">
           <CardTitle icon={IconChartBar} iconClass="text-[#1F5B3A]">Lots Overview</CardTitle>
           <div className="mt-12 flex items-center gap-6">
@@ -160,12 +167,12 @@ export default function MineralLotsPage() {
           <div className="border-gray-100 lg:border-l lg:pl-6">
             <h3 className="font-sans text-lg font-semibold">Top Mineral Types</h3>
             <ul className="mt-8 space-y-6">
-              {byMineral.map(({ name, pct: p }, i) => (
+              {byMineral.map(({ name, pct: p }) => (
                 <li key={name} className="flex items-center gap-4">
                   <MineralThumb size={44} />
                   <div className="flex-1 space-y-2">
                     <p className="flex justify-between text-[15px]"><span>{name}</span><span>{p}%</span></p>
-                    <Bar value={p} color={["#1F5B3A", "#E8792B", "#8b8f9b"][i]} />
+                    <Bar value={p} color={mineralColor(name)} />
                   </div>
                 </li>
               ))}
@@ -174,7 +181,7 @@ export default function MineralLotsPage() {
         </Card>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_292px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1fr_292px]">
         <Card className="pt-6">
           <div className="flex flex-wrap items-center justify-between gap-3 px-6">
             <CardTitle icon={IconBox} iconClass="text-[#1F5B3A]">Mineral Lots</CardTitle>
@@ -191,14 +198,14 @@ export default function MineralLotsPage() {
             {page.length === 0 ? (
               <Empty>No lots match these filters.</Empty>
             ) : (
-              <table className="w-full text-left text-sm [&_td]:whitespace-nowrap">
+              <table className="w-full text-left text-sm">
                 <thead className="bg-head">
                   <tr>{["Lot ID", "Mineral Type", "Quantity", "Grade", "Origin Site", "Status", "Date Created", "Actions"].map((h) => <th key={h} className="px-3 py-3 text-[13px] font-medium">{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {page.map((l) => (
                     <tr key={l.id} className="border-b border-gray-100 last:border-0">
-                      <td className="px-3 py-3"><span className="flex items-center gap-3 text-[15px]"><MineralThumb />{l.id}</span></td>
+                      <td className="px-3 py-3"><Link href={`/miner/mineral-lots/${l.id}`} className="flex items-center gap-3 text-[15px] hover:text-[#1F5B3A] hover:underline"><MineralThumb />{l.id}</Link></td>
                       <td className="px-3"><span className={`rounded-full px-3 py-1 ${mineralChip[l.mineral] ?? "bg-gray-100"}`}>{l.mineral}</span></td>
                       <td className="px-3">{fmtKg(l.quantityKg)}</td>
                       <td className="px-3">{l.grade}%</td>
@@ -212,9 +219,9 @@ export default function MineralLotsPage() {
                           </button>
                           <RowMenu
                             items={[
-                              { label: "View details", icon: IconEye, onClick: () => setView(l) },
-                              ...(l.status === "Verified" ? [{ label: "Sell on marketplace", icon: IconBuildingStore, onClick: () => setSellLot(l.id) }] : []),
-                              ...(l.status === "Pending" ? [{ label: "Request inspection", icon: IconShieldCheck, onClick: () => router.push("/miner/inspections?new=1") }] : []),
+                              { label: "Open passport", icon: IconEye, onClick: () => router.push(`/miner/mineral-lots/${l.id}`) },
+                              ...(l.status === "Verified" && can.sell(me.role) ? [{ label: "Sell on marketplace", icon: IconBuildingStore, onClick: () => openForm("sell", l.id) }] : []),
+                              ...(l.status === "Pending" ? [{ label: "Request inspection", icon: IconShieldCheck, onClick: () => openForm("inspection", l.id) }] : []),
                             ]}
                           />
                         </span>
@@ -228,7 +235,8 @@ export default function MineralLotsPage() {
           <Pagination {...pager} noun="lots" />
         </Card>
 
-        <section className="self-start rounded-[22px] bg-primary-soft/70 p-5">
+        <div className="space-y-5 self-start">
+        <section className="rounded-[22px] bg-primary-soft/70 p-5">
           <CardTitle icon={IconShieldCheck} iconClass="text-[#1F5B3A]">Quick Actions</CardTitle>
           <div className="mt-5 space-y-3">
             {[
@@ -247,10 +255,11 @@ export default function MineralLotsPage() {
             ))}
           </div>
         </section>
+        <AnomalyCard limit={4} />
+        </div>
       </div>
 
       {modal === "create" && <CreateLotModal onClose={() => setModal(null)} />}
-      {sellLot && <ListLotModal lotId={sellLot} onClose={() => setSellLot(null)} />}
       {modal === "history" && (
         <Modal title="Lot History" subtitle="Every lot event, newest first" onClose={() => setModal(null)}>
           <ol className="space-y-4">
@@ -258,26 +267,12 @@ export default function MineralLotsPage() {
               <li key={l.id} className="flex gap-3 text-sm">
                 <i className={`mt-1.5 size-2 shrink-0 rounded-full ${l.status === "Verified" ? "bg-[#1F5B3A]" : l.status === "Pending" ? "bg-accent" : "bg-danger"}`} />
                 <div className="flex-1">
-                  <p><b className="font-semibold">{l.id}</b> · {l.mineral} · {fmtKg(l.quantityKg)} registered at {siteName(state, l.siteId)}</p>
+                  <p><Link href={`/miner/mineral-lots/${l.id}`} className="font-semibold hover:underline">{l.id}</Link> · {l.mineral} · {fmtKg(l.quantityKg)} registered at {siteName(state, l.siteId)}</p>
                   <p className="text-xs text-ink/60">{l.created} · now {l.status.toLowerCase()}</p>
                 </div>
               </li>
             ))}
           </ol>
-        </Modal>
-      )}
-      {view && (
-        <Modal title={`Lot ${view.id}`} subtitle={`${view.mineral} · ${siteName(state, view.siteId)}`} onClose={() => setView(null)}>
-          <dl className="grid grid-cols-2 gap-4 text-sm">
-            {[
-              ["Mineral", view.mineral],
-              ["Quantity", fmtKg(view.quantityKg)],
-              ["Declared grade", `${view.grade}%`],
-              ["Status", view.status],
-              ["Origin site", siteName(state, view.siteId)],
-              ["Registered", view.created],
-            ].map(([k, v]) => <div key={k}><dt className="text-ink/60">{k}</dt><dd className="font-medium">{v}</dd></div>)}
-          </dl>
         </Modal>
       )}
     </>

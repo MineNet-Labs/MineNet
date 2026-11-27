@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { IconSend2, IconSparkles, IconX } from "@tabler/icons-react";
 import { getState, siteName } from "@/lib/store";
 import { fmtKg } from "@/lib/data";
+import { anomalies, orgCanAct } from "@/lib/domain";
 
 type Msg = { from: "user" | "assistant"; text: string };
 
@@ -17,9 +18,12 @@ const suggestionsByPage: Record<string, string[]> = {
   "mineral-lots": ["Which lots are verified?", "Where can I sell my lots?", "Which inspections are pending?"],
   inspections: ["Which inspections are pending?", "Which lots are verified?", "Which shafts are in maintenance?"],
   workers: ["How many workers per site?", "Which workers need access setup?", "How many sites are active?"],
-  payments: ["What payments are pending?", "How much have I received?", "Which offers need my response?"],
+  payments: ["What is locked in escrow?", "What payments are pending?", "How much have I received?"],
+  financing: ["Which loans are active?", "Where can I sell my lots?", "What is locked in escrow?"],
+  insurance: ["Which lots have insurance cover?", "Which lots are in transit?", "What is locked in escrow?"],
+  licence: ["What is my validation status?", "Which licences expire soon?", "How many sites are active?"],
 };
-const defaultSuggestions = ["What needs my attention?", "Where can I sell my lots?", "What payments are pending?"];
+const defaultSuggestions = ["What needs my attention?", "Any anomalies in my lots?", "Where can I sell my lots?"];
 
 const list = (xs: string[]) => (xs.length ? xs.join(", ") : "none");
 
@@ -34,6 +38,33 @@ function answer(q: string): string {
     const pendingPay = s.txns.filter((x) => x.status === "Pending" || x.status === "Processing").length;
     const maint = s.shafts.filter((x) => x.status === "Maintenance").length;
     return `You have ${countered} countered offer(s) to answer, ${pendingInsp} pending inspection(s), ${pendingPay} payment(s) in progress and ${maint} shaft(s) in maintenance.`;
+  }
+  if (t.includes("escrow")) {
+    const locked = s.escrows.filter((e) => e.status === "Locked");
+    return locked.length
+      ? `${locked.length} escrow(s) locked: ${list(locked.map((e) => `${e.id} for ${e.lotId} (${e.currency} ${e.amount.toLocaleString()} from ${e.buyer})`))}. The money is released when the buyer accepts delivery.`
+      : "No money is locked in escrow right now.";
+  }
+  if (t.includes("loan") || t.includes("financ") || t.includes("lien")) {
+    const active = s.loans.filter((l) => l.status === "Active");
+    return active.length
+      ? `${active.length} active loan(s): ${list(active.map((l) => `${l.id} on ${l.lotId} (USD ${l.amount.toLocaleString()}, due ${l.due})`))}. Escrow repays them when the lot sells.`
+      : "You have no active loans. Use Financing to borrow against a verified lot.";
+  }
+  if (t.includes("insur") || t.includes("cover")) {
+    const active = s.policies.filter((p) => p.status === "Active");
+    return `${active.length} active polic${active.length === 1 ? "y" : "ies"}: ${list(active.map((p) => `${p.id} ${p.cover.toLowerCase()} cover on ${p.lotId}`))}.`;
+  }
+  if (t.includes("anomal") || t.includes("unusual") || t.includes("risk")) {
+    const flags = anomalies(s);
+    return flags.length ? `${flags.length} flag(s). ${flags.slice(0, 3).map((f) => `${f.lotId}: ${f.text}`).join(" ")}` : "No anomalies found in your lots.";
+  }
+  if (t.includes("validat") || t.includes("suspend") || t.includes("status")) {
+    return `Your organisation is ${s.org.status.toLowerCase()} with RMB${s.org.status === "Validated" ? ` until ${s.org.validatedUntil}` : ""}. ${orgCanAct(s) ? "You can register, list and dispatch lots." : "Lot registration, listing and dispatch are blocked."}`;
+  }
+  if (t.includes("custody") || t.includes("transit") || t.includes("dispatch")) {
+    const moving = s.transfers.filter((x) => x.status === "In transit" || x.status === "Awaiting handover");
+    return moving.length ? `${list(moving.map((x) => `${x.lotId} is ${x.status.toLowerCase()} (${x.id}, seal ${x.seal})`))}.` : "No lots are moving right now.";
   }
   if (t.includes("offer")) {
     const c = s.offers.filter((o) => o.status === "Countered");
@@ -102,7 +133,7 @@ function answer(q: string): string {
     const p = s.txns.filter((x) => x.status === "Pending" || x.status === "Processing");
     return `${p.length} payment(s) are pending or processing: ${list(p.map((x) => `${x.party} (${x.currency} ${x.amount.toLocaleString()})`))}.`;
   }
-  return "I can answer questions about your sites, shafts, workers, lots, inspections, marketplace offers and payments. Try one of the suggestions.";
+  return "I can answer questions about your sites, shafts, workers, lots, inspections, offers, escrow, loans, insurance, custody, licences and anomalies. Try one of the suggestions.";
 }
 
 /** Floating MineNet assistant, available on every miner page (bottom-right). */
@@ -116,7 +147,6 @@ export function Assistant() {
   const [input, setInput] = useState("");
   const end = useRef<HTMLDivElement>(null);
 
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
 
   const ask = (q: string) => {
     if (!q.trim()) return;
@@ -130,7 +160,7 @@ export function Assistant() {
         <section
           role="dialog"
           aria-label="MineNet assistant"
-          className="fixed right-6 bottom-24 z-40 flex h-[460px] w-[360px] flex-col rounded-[22px] bg-white shadow-[0_20px_60px_rgba(17,24,39,0.18)]"
+          className="fixed right-6 bottom-24 z-40 flex w-[360px] flex-col rounded-[22px] bg-white shadow-[0_20px_60px_rgba(17,24,39,0.18)]"
         >
           <header className="flex items-start justify-between border-b border-gray-100 px-5 pt-5 pb-4">
             <div>
@@ -142,9 +172,9 @@ export function Assistant() {
             </button>
           </header>
 
-          <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4 text-sm">
+          <div className="space-y-3 px-5 py-4 text-sm">
             {msgs.length === 0 && <p className="text-ink/80">Ask me anything about your operations. Try one of these:</p>}
-            {msgs.map((m, i) => (
+            {msgs.slice(-2).map((m, i) => (
               <p
                 key={i}
                 className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 ${m.from === "user" ? "ml-auto bg-[#1F5B3A] text-white" : "bg-page text-ink"}`}

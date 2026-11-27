@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Select } from "@/components/ui/Select";
 import { IconChevronDown, IconHeadphones, IconMail, IconMessage, IconPhone, IconUser, IconSend } from "@tabler/icons-react";
 import { Card, CardTitle, Field, PageHeader, inputClass, toast } from "@/components/ui";
 
@@ -20,7 +21,7 @@ export default function SupportPage() {
     <>
       <PageHeader title="Support" subtitle="Answers to common questions, or reach the MineNet team directly." />
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_400px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1fr_400px]">
         <Card className="p-6">
           <CardTitle icon={IconMessage}>Frequently asked questions</CardTitle>
           <ul className="mt-4 divide-y divide-gray-100">
@@ -53,14 +54,14 @@ export default function SupportPage() {
                 }}
               >
                 <Field label="Topic">
-                  <select required defaultValue="" className={inputClass}>
+                  <Select required defaultValue="" className={inputClass}>
                     <option value="" disabled>Select a topic</option>
                     <option>Lots & inspections</option>
                     <option>Marketplace & offers</option>
                     <option>Payments</option>
                     <option>Workers & access</option>
                     <option>Something else</option>
-                  </select>
+                  </Select>
                 </Field>
                 <Field label="Message">
                   <textarea required rows={4} className="w-full resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-[#1F5B3A]" />

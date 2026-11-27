@@ -27,9 +27,6 @@ export function Tabs({
             } ${active ? "border-accent font-medium text-accent" : "border-transparent text-ink/80 hover:text-ink"}`}
           >
             {t.label}
-            {t.count !== undefined && (
-              <span className={`ml-1.5 ${size === "lg" ? "" : "align-super text-[11px]"}`}>{t.count}</span>
-            )}
           </button>
         );
       })}

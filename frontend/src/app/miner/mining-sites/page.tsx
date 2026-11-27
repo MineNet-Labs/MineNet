@@ -1,5 +1,7 @@
 "use client";
 
+import { openForm } from "@/components/FormHost";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -32,14 +34,15 @@ import {
   usePaged,
 } from "@/components/ui";
 import { RwandaMap, type MapSite } from "@/components/ui/RwandaMap";
-import { RegisterSiteModal } from "@/components/forms";
 import { fmtNum, parseDate } from "@/lib/data";
-import { update, useStore } from "@/lib/store";
+import { update, useMe, useStore } from "@/lib/store";
+import { can } from "@/lib/roles";
 
 type Sort = "Name" | "Area" | "Last activity";
 
 export default function MiningSitesPage() {
   const router = useRouter();
+  const me = useMe();
   const sites = useStore((s) => s.sites);
   const lots = useStore((s) => s.lots);
   const [status, setStatus] = useState("");
@@ -84,19 +87,19 @@ export default function MiningSitesPage() {
         actions={
           <div className="flex flex-col items-end gap-4">
             <DateRange />
-            <PrimaryButton icon={IconPlus} onClick={() => setModal("register")}>Register Mineral Site</PrimaryButton>
+            {can.registerSites(me.role) && <PrimaryButton icon={IconPlus} onClick={() => openForm("site")}>Register Mineral Site</PrimaryButton>}
           </div>
         }
       />
 
-      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={IconPick} tone="orange" label="Total Sites" value={sites.length} delta="+1" deltaClass="text-accent" spark={[3, 3.5, 3.2, 4, 3.8, 5, 8]} />
         <StatCard icon={IconCheck} tone="green" label="Active Sites" value={active} delta="+1" spark={[3, 4, 3.5, 5, 4.5, 6, 8]} />
         <StatCard icon={IconPlayerPause} tone="orange" label="Inactive sites" value={sites.length - active} delta="-1" deltaDir="down" spark={[3, 3.5, 3.2, 4, 3.8, 5, 8]} />
         <StatCard icon={IconMapPin} tone="green" label="Total Area" value={`${fmtNum(area, 1)} ha`} delta="+2%" spark={[3, 4, 3.5, 5, 4.5, 6, 8]} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_400px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1fr_400px]">
         <Card className="pt-6 pb-1">
           <div className="px-6">
             <CardTitle
@@ -112,7 +115,7 @@ export default function MiningSitesPage() {
             </CardTitle>
           </div>
           <div className="overflow-x-auto px-5">
-            <table className="mt-5 w-full text-left text-[15px] [&_td]:whitespace-nowrap">
+            <table className="mt-5 w-full text-left text-[15px]">
               <thead className="bg-head">
                 <tr>
                   {["Site Name", "Location", "Status", "Total Area", "Last Activity", "Actions"].map((h) => (
@@ -187,7 +190,6 @@ export default function MiningSitesPage() {
         </div>
       </div>
 
-      {modal === "register" && <RegisterSiteModal onClose={() => setModal(null)} />}
       {modal === "map" && (
         <Modal title="All mining sites" subtitle="Click a pin to focus a site. Use + / − to zoom." onClose={() => setModal(null)} width={1100}>
           <RwandaMap sites={mapSites} height={560} valueLabel="Lots" />

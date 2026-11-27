@@ -99,6 +99,20 @@ html {
     --app-zoom: 0.75;
   }
 }
+/* Phones and small tablets get a real mobile layout (no sidebar), so no zoom. */
+@media (max-width: 1023px) {
+  html {
+    --app-zoom: 0.9;
+  }
+}
+@media (max-width: 639px) {
+  html {
+    --app-zoom: 1;
+  }
+  h1 {
+    font-size: 28px;
+  }
+}
 
 /* Never scroll the page sideways; wide tables scroll inside their own card. */
 html,

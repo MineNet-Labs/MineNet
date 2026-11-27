@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
+import { openForm } from "@/components/FormHost";
 import { useMemo, useState } from "react";
 import {
   IconArrowLeft,
@@ -35,7 +36,7 @@ import { fmtKg, fmtNum } from "@/lib/data";
 import { useStore } from "@/lib/store";
 import { downloadCSV } from "@/lib/csv";
 
-type Tab = "workers" | "shafts" | "lots" | "records";
+type Tab = "workers" | "shafts" | "lots" | "records" | "documents";
 
 /** One mining site: its own workers, shafts, lots and extraction records. */
 export function SiteDetail() {
@@ -45,7 +46,9 @@ export function SiteDetail() {
   const allWorkers = useStore((s) => s.workers);
   const allLots = useStore((s) => s.lots);
   const allRecords = useStore((s) => s.records);
-  const [tab, setTab] = useState<Tab>("workers");
+  const allDocs = useStore((s) => s.docs);
+  const q = useSearchParams();
+  const [tab, setTab] = useState<Tab>((q.get("tab") as Tab) || "workers");
   const [modal, setModal] = useState<"worker" | "shaft" | "lot" | "record" | null>(null);
 
   const site = sites.find((s) => s.id === id);
@@ -53,6 +56,7 @@ export function SiteDetail() {
   const workers = useMemo(() => allWorkers.filter((x) => x.siteId === id), [allWorkers, id]);
   const lots = useMemo(() => allLots.filter((x) => x.siteId === id), [allLots, id]);
   const records = useMemo(() => allRecords.filter((x) => x.siteId === id), [allRecords, id]);
+  const docs = useMemo(() => allDocs.filter((x) => x.siteId === id), [allDocs, id]);
 
   if (!site) {
     return (
@@ -74,15 +78,16 @@ export function SiteDetail() {
     { key: "shafts", label: "Mine Shafts", count: shafts.length },
     { key: "lots", label: "Mineral Lots", count: lots.length },
     { key: "records", label: "Extraction Records", count: records.length },
+    { key: "documents", label: "Documents", count: docs.length },
   ];
-  const addLabel = { workers: "Add Worker", shafts: "Add Shaft", lots: "Register Lot", records: "New Record" }[tab];
-  const addModal = ({ workers: "worker", shafts: "shaft", lots: "lot", records: "record" } as const)[tab];
+  const addLabel = { workers: "Add Worker", shafts: "Add Shaft", lots: "Register Lot", records: "New Record", documents: "Upload Document" }[tab];
+  const addModal = ({ workers: "worker", shafts: "shaft", lots: "lot", records: "record", documents: "document" } as const)[tab];
 
   return (
     <>
       <div className="pl-2">
-        <Link href="/miner/mining-sites" className="mb-3 inline-flex items-center gap-2 text-[15px] text-accent hover:underline">
-          <IconArrowLeft className="size-4" /> Mining Sites
+        <Link href="/miner/mining-sites" className="mb-4 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-[15px] font-medium text-ink shadow-sm hover:bg-page">
+          <IconArrowLeft className="size-5" /> Mining Sites
         </Link>
         <div className="flex items-start justify-between gap-6">
           <div className="flex items-center gap-5">
@@ -137,7 +142,7 @@ export function SiteDetail() {
         ))}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
         <Card className="pt-5">
           <div className="flex items-center justify-between border-b border-gray-100 px-6">
             <div className="flex gap-7">
@@ -149,11 +154,11 @@ export function SiteDetail() {
                     tab === t.key ? "border-accent font-medium text-accent" : "border-transparent text-ink/80 hover:text-ink"
                   }`}
                 >
-                  {t.label} <span className="align-super text-[11px]">{t.count}</span>
+                  {t.label}
                 </button>
               ))}
             </div>
-            <button onClick={() => setModal(addModal)} className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-4 py-2 text-sm hover:bg-page">
+            <button onClick={() => (addModal === "document" ? openForm("document", undefined, site.id) : setModal(addModal))} className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-4 py-2 text-sm hover:bg-page">
               <IconPlus className="size-4" /> {addLabel}
             </button>
           </div>
@@ -163,7 +168,7 @@ export function SiteDetail() {
               (workers.length === 0 ? (
                 <Empty>No workers assigned to this site yet.</Empty>
               ) : (
-                <table className="w-full text-left text-sm [&_td]:whitespace-nowrap">
+                <table className="w-full text-left text-sm">
                   <thead className="bg-head">
                     <tr>{["Worker", "Worker ID", "Category", "Phone", "Account access", "Status", "Joined"].map((h) => <th key={h} className="px-3 py-3 text-[13px] font-medium">{h}</th>)}</tr>
                   </thead>
@@ -187,7 +192,7 @@ export function SiteDetail() {
               (shafts.length === 0 ? (
                 <Empty>No shafts registered at this site.</Empty>
               ) : (
-                <table className="w-full text-left text-sm [&_td]:whitespace-nowrap">
+                <table className="w-full text-left text-sm">
                   <thead className="bg-head">
                     <tr>{["Shaft", "Mineral", "Depth", "Status", "Last inspection"].map((h) => <th key={h} className="px-3 py-3 text-[13px] font-medium">{h}</th>)}</tr>
                   </thead>
@@ -209,7 +214,7 @@ export function SiteDetail() {
               (lots.length === 0 ? (
                 <Empty>No mineral lots from this site yet.</Empty>
               ) : (
-                <table className="w-full text-left text-sm [&_td]:whitespace-nowrap">
+                <table className="w-full text-left text-sm">
                   <thead className="bg-head">
                     <tr>{["Lot ID", "Mineral", "Quantity", "Grade", "Status", "Created"].map((h) => <th key={h} className="px-3 py-3 text-[13px] font-medium">{h}</th>)}</tr>
                   </thead>
@@ -228,11 +233,33 @@ export function SiteDetail() {
                 </table>
               ))}
 
+            {tab === "documents" &&
+              (docs.length === 0 ? (
+                <Empty>No documents for this site yet. Upload its licence, environmental assessment and permits here.</Empty>
+              ) : (
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-head">
+                    <tr>{["Document", "Type", "Reference", "Issued", "Expires"].map((h) => <th key={h} className="px-3 py-3 text-[13px] font-medium">{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {docs.map((d) => (
+                      <tr key={d.id} className="border-b border-gray-100">
+                        <td className="px-3 py-3"><b className="font-medium">{d.name}</b><span className="block text-xs text-ink/60">{d.fileName}</span></td>
+                        <td className="px-3">{d.kind}</td>
+                        <td className="px-3">{d.number}</td>
+                        <td className="px-3 text-ink/70">{d.issued}</td>
+                        <td className="px-3 text-ink/70">{d.expires ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ))}
+
             {tab === "records" &&
               (records.length === 0 ? (
                 <Empty>No extraction records for this site yet.</Empty>
               ) : (
-                <table className="w-full text-left text-sm [&_td]:whitespace-nowrap">
+                <table className="w-full text-left text-sm">
                   <thead className="bg-head">
                     <tr>{["Record ID", "Shaft", "Mineral", "Quantity", "Date", "Status"].map((h) => <th key={h} className="px-3 py-3 text-[13px] font-medium">{h}</th>)}</tr>
                   </thead>
@@ -277,9 +304,9 @@ export function SiteDetail() {
               <div className="flex justify-between"><dt className="text-ink/60">Last activity</dt><dd className="font-medium">{site.lastActivity}</dd></div>
             </dl>
             {licenceSoon && (
-              <p className="mt-4 rounded-xl bg-accent-soft px-3 py-2 text-xs text-accent">Licence expires soon — renew it under Documents & Licences.</p>
+              <p className="mt-4 rounded-xl bg-accent-soft px-3 py-2 text-xs text-accent">Licence expires soon — upload the renewed licence in this site&apos;s Documents tab.</p>
             )}
-            <Link href="/miner/documents" className="mt-4 block text-center text-sm font-medium text-accent hover:underline">View documents →</Link>
+            <button onClick={() => setTab("documents")} className="mt-4 block w-full text-center text-sm font-medium text-accent hover:underline">Site documents →</button>
           </Card>
         </div>
       </div>

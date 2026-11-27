@@ -1,7 +1,15 @@
 "use client";
 
+import { HrOverview } from "@/components/HrOverview";
+
+import { can } from "@/lib/roles";
+
+import { monthlyByMineral } from "@/lib/series";
+
+import { AnomalyCard } from "@/components/AnomalyCard";
+
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   IconAlertTriangle,
   IconBox,
@@ -28,12 +36,15 @@ import {
   ViewAll,
   statusTone,
 } from "@/components/ui";
-import { Donut, GroupedBars, LiveBadge } from "@/components/ui/charts";
+import { Donut,  LiveBadge, MineralBars } from "@/components/ui/charts";
 import { CreateLotModal } from "@/components/forms";
 import { fmtKg } from "@/lib/data";
-import { siteName, useStore } from "@/lib/store";
+import { siteName, useStore, useMe } from "@/lib/store";
 
-export default function MinerOverview() {
+function OwnerOverview() {
+  const me = useMe();
+  const allRecords = useStore((st) => st.records);
+  const production = useMemo(() => monthlyByMineral(allRecords), [allRecords]);
   const state = useStore((s) => s);
   const { sites, lots, records, inspections } = state;
   const [open, setOpen] = useState(false);
@@ -45,17 +56,28 @@ export default function MinerOverview() {
   return (
     <>
       <PageHeader
-        title="Good morning, Jean"
+        title={`Good ${new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, ${me.name.split(" ")[0]}`}
         subtitle="Here's what's happening in your mining operations."
         actions={
           <>
             <DateRange />
-            <PrimaryButton icon={IconPlus} onClick={() => setOpen(true)}>Register Mineral Lot</PrimaryButton>
+            {can.recordProduction(me.role) && <PrimaryButton icon={IconPlus} onClick={() => setOpen(true)}>Register Mineral Lot</PrimaryButton>}
           </>
         }
       />
 
-      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
+      {me.role === "Owner" && state.approvals.some((a) => a.status === "Pending") && (
+        <Link href="/miner/approvals" className="flex flex-wrap items-center gap-4 rounded-[22px] border border-[#f6d6bd] bg-accent-soft/60 px-6 py-4 hover:shadow-sm">
+          <IconClock className="size-6 text-accent" />
+          <span className="flex-1 text-[15px]">
+            <b className="font-semibold">Site managers are waiting for your approval</b> ·{" "}
+            {state.approvals.filter((a) => a.status === "Pending").map((a) => a.summary).slice(0, 2).join(" · ")}
+          </span>
+          <span className="rounded-full bg-white px-4 py-2 text-sm font-medium text-accent">Review</span>
+        </Link>
+      )}
+
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <Link href="/miner/mining-sites" className="block"><StatCard icon={IconPick} tone="orange" label="Registered Sites" value={sites.length} delta="+1" spark={[3, 4, 3.5, 5, 4.5, 6, 9]} /></Link>
         <Link href="/miner/mineral-lots" className="block"><StatCard icon={IconBox} tone="orange" label="Mineral Lots" value={lots.length} delta="+12%" spark={[3, 3.5, 4, 4.5, 5, 6, 9]} /></Link>
         <Link href="/miner/extraction-records" className="block"><StatCard icon={IconTruck} tone="green" label="Extraction Recorded" value={fmtKg(extracted)} delta="+8%" spark={[3, 4, 3.2, 5, 4, 6, 5, 8]} /></Link>
@@ -73,23 +95,21 @@ export default function MinerOverview() {
         </Link>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_392px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1fr_392px]">
         <Card className="p-6">
           <CardTitle icon={IconChartBar} action={<MiniSelect options={["Last 6 Months", "Last 3 Months", "This year"]} />}>
             <span className="flex items-center gap-3">Production Overview <LiveBadge /></span>
           </CardTitle>
-          <div className="mt-3 mb-2 flex justify-end gap-6 text-[15px]">
-            <span className="flex items-center gap-2"><i className="size-2.5 rounded-full bg-[#1F5B3A]" /> Gold</span>
-            <span className="flex items-center gap-2 text-accent"><i className="size-2.5 rounded-full bg-[#F0913F]" /> Coltan</span>
+          <div className="mt-3 mb-2 flex flex-wrap justify-end gap-x-6 gap-y-1 text-[15px]">
+            {production.series.map((m) => (
+              <span key={m.name} className="flex items-center gap-2"><i className="size-2.5 rounded-full" style={{ background: m.color }} /> {m.name}</span>
+            ))}
           </div>
-          <GroupedBars
-            labels={["Jan", "Feb", "Mar", "Apr", "May", "Jun"]}
-            names={["Gold", "Coltan"]}
-            series={[
-              { color: "#1F5B3A", values: [11.5, 14, 15.8, 16.5, 15, 17] },
-              { color: "#F0913F", values: [9.5, 12.5, 14.5, 15.2, 13.5, 15.2] },
-            ]}
-          />
+          {production.series.length ? (
+            <MineralBars labels={production.labels} series={production.series} />
+          ) : (
+            <p className="py-16 text-center text-sm text-ink/60">No approved extraction records yet.</p>
+          )}
         </Card>
 
         <Card className="p-6">
@@ -123,13 +143,13 @@ export default function MinerOverview() {
         </Card>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_392px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1fr_392px]">
         <Card className="p-4 pt-6">
           <div className="px-2">
             <CardTitle icon={IconBox} action={<ViewAll href="/miner/mineral-lots" />}>Recent Mineral Lots</CardTitle>
           </div>
           <div className="overflow-x-auto">
-            <table className="mt-5 w-full text-left text-[15px] [&_td]:whitespace-nowrap">
+            <table className="mt-5 w-full text-left text-[15px]">
               <thead className="bg-head text-ink">
                 <tr>{["Lot ID", "Mineral", "Site", "Weight", "Status", "Date"].map((h) => <th key={h} className="px-3 py-3 font-medium">{h}</th>)}</tr>
               </thead>
@@ -184,7 +204,15 @@ export default function MinerOverview() {
         </Card>
       </div>
 
+      <AnomalyCard />
+
       {open && <CreateLotModal onClose={() => setOpen(false)} />}
     </>
   );
+}
+
+/** HR gets a people-focused home; owners and site managers get operations. */
+export default function MinerOverview() {
+  const me = useMe();
+  return me.role === "HR" ? <HrOverview /> : <OwnerOverview />;
 }

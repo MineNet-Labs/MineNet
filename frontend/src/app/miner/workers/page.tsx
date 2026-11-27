@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { withConfirm } from "@/components/ui/Confirm";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -13,6 +14,7 @@ import {
   IconDownload,
   IconInfoCircle,
   IconMapPin,
+  IconUser,
   IconPlayerPause,
   IconPlayerPlay,
   IconPlus,
@@ -34,6 +36,7 @@ import {
   StatusBadge,
   toast,
   usePaged,
+  ViewAll,
 } from "@/components/ui";
 import { Tabs } from "@/components/ui/Tabs";
 import { AddWorkerModal } from "@/components/forms";
@@ -89,7 +92,7 @@ export default function WorkersPage() {
         title="Workers"
         subtitle="Manage your site workforce, access and work records"
         actions={
-          <PrimaryButton icon={IconPlus} tone="orange" className="rounded-full bg-[#E8792B] text-[17px]" onClick={() => setOpen(true)}>
+          <PrimaryButton icon={IconPlus} className="rounded-full text-[17px]" onClick={() => setOpen(true)}>
             Add Worker
           </PrimaryButton>
         }
@@ -112,7 +115,7 @@ export default function WorkersPage() {
         )}
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1fr_300px]">
         <Card className="px-5 pt-5">
           <div className="flex items-center justify-between border-b border-gray-100 px-2">
             <Tabs
@@ -159,14 +162,14 @@ export default function WorkersPage() {
             {page.length === 0 ? (
               <Empty>No workers match these filters.</Empty>
             ) : (
-              <table className="w-full text-left text-[15px] [&_td]:whitespace-nowrap">
+              <table className="w-full text-left text-[15px]">
                 <thead className="bg-head">
                   <tr>{["Worker", "Worker ID", "Site", "Work category", "Account access", "Assignment", "Actions"].map((h) => <th key={h} className="px-3 py-3.5 font-normal">{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {page.map((w) => (
                     <tr key={w.id} className="border-b border-gray-100">
-                      <td className="px-3 py-2.5"><span className="flex items-center gap-4 font-medium"><Initials name={w.name} className="size-10 text-sm" />{w.name}</span></td>
+                      <td className="px-3 py-2.5"><Link href={`/miner/workers/${w.id}`} className="flex items-center gap-4 font-medium hover:text-[#1F5B3A] hover:underline"><Initials name={w.name} className="size-10 text-sm" />{w.name}</Link></td>
                       <td className="px-3">{w.id}</td>
                       <td className="px-3"><Link href={`/miner/mining-sites/${w.siteId}`} className="hover:text-[#1F5B3A] hover:underline">{siteName(state, w.siteId)}</Link></td>
                       <td className="px-3">{w.category}</td>
@@ -175,12 +178,13 @@ export default function WorkersPage() {
                       <td className="px-3 text-center">
                         <RowMenu
                           items={[
+                            { label: "View profile", icon: IconUser, onClick: () => router.push(`/miner/workers/${w.id}`) },
                             { label: "View site", icon: IconMapPin, onClick: () => router.push(`/miner/mining-sites/${w.siteId}`) },
                             ...(w.access === "Setup pending"
                               ? [{ label: "Send QR access code", icon: IconQrcode, onClick: () => setWorker(w.id, { access: "QR ready" }, `QR access code sent to ${w.name} (${w.phone})`) }]
                               : []),
                             w.status === "Active"
-                              ? { label: "Deactivate", icon: IconPlayerPause, danger: true, onClick: () => setWorker(w.id, { status: "Inactive" }, `${w.name} deactivated`) }
+                              ? { label: "Deactivate", icon: IconPlayerPause, danger: true, onClick: withConfirm({ title: "Deactivate worker?", message: `${w.name} will lose site access until reactivated.`, confirmLabel: "Deactivate", tone: "danger" }, () => setWorker(w.id, { status: "Inactive" }, `${w.name} deactivated`)) }
                               : { label: "Reactivate", icon: IconPlayerPlay, onClick: () => setWorker(w.id, { status: "Active" }, `${w.name} reactivated`) },
                           ]}
                         />
@@ -227,7 +231,7 @@ export default function WorkersPage() {
           </Card>
 
           <Card className="p-5">
-            <CardTitle icon={IconBolt}>Recent workforce activity</CardTitle>
+            <CardTitle icon={IconBolt} action={<ViewAll href="/miner/attendance" />}>Recent workforce activity</CardTitle>
             <ul className="mt-5 space-y-3">
               {workers.slice(0, 3).map((w, i) => (
                 <li key={w.id} className="flex gap-3">

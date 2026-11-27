@@ -8,7 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { seed, type AppData } from "./data";
 
-const KEY = "minenet.data.v1";
+const KEY = "minenet.data.v5";
 let state: AppData = seed;
 let loaded = false;
 const listeners = new Set<() => void>();
@@ -29,16 +29,56 @@ function subscribe(fn: () => void) {
   return () => listeners.delete(fn);
 }
 
+/**
+ * What the signed-in member may see: site managers only get their assigned
+ * sites and everything that belongs to them. Cached so selectors stay stable.
+ */
+let scopedFor: AppData | null = null;
+let scopedState: AppData = seed;
+export function scope(s: AppData): AppData {
+  if (s === scopedFor) return scopedState;
+  const me = s.members.find((m) => m.id === s.sessionMemberId);
+  let out = s;
+  if (me?.role === "Site manager") {
+    const ids = new Set(me.siteIds);
+    const workerIds = new Set(s.workers.filter((w) => ids.has(w.siteId)).map((w) => w.id));
+    const lotIds = new Set(s.lots.filter((l) => ids.has(l.siteId)).map((l) => l.id));
+    out = {
+      ...s,
+      sites: s.sites.filter((x) => ids.has(x.id)),
+      shafts: s.shafts.filter((x) => ids.has(x.siteId)),
+      workers: s.workers.filter((x) => ids.has(x.siteId)),
+      lots: s.lots.filter((x) => ids.has(x.siteId)),
+      records: s.records.filter((x) => ids.has(x.siteId)),
+      inspections: s.inspections.filter((x) => ids.has(x.siteId)),
+      docs: s.docs.filter((x) => !x.siteId || ids.has(x.siteId)),
+      transfers: s.transfers.filter((x) => lotIds.has(x.lotId)),
+      attendance: s.attendance.filter((a) => workerIds.has(a.workerId)),
+      leaves: s.leaves.filter((a) => workerIds.has(a.workerId)),
+      incidents: s.incidents.filter((x) => ids.has(x.siteId)),
+      shiftReports: s.shiftReports.filter((x) => ids.has(x.siteId)),
+      events: s.events.filter((x) => lotIds.has(x.lotId)),
+      approvals: s.approvals.filter((x) => x.memberId === me.id),
+    };
+  }
+  scopedFor = s;
+  scopedState = out;
+  return out;
+}
+
 export function useStore<T>(select: (s: AppData) => T): T {
   return useSyncExternalStore(
     subscribe,
     () => {
       load();
-      return select(state);
+      return select(scope(state));
     },
     () => select(seed),
   );
 }
+
+/** The signed-in team member. */
+export const useMe = () => useStore((s) => s.members.find((m) => m.id === s.sessionMemberId) ?? s.members[0]);
 
 /** Read the current state outside React (event handlers). */
 export function getState() {
