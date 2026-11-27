@@ -12,3 +12,22 @@ docs/
 
 # Dotenv file
 .env
+
+# Local editor / assistant settings
+.claude/
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Frontend dependencies and builds (frontend/ also has its own .gitignore)
+node_modules/
+.next/
+build/
+dist/
+
+# Secrets
+.env.*
+!.env.example
