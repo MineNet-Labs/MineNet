@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+/*
+ * MineNet design tokens — source: "MineNet UI Style Guide" (Brand design system).
+ * Use these as Tailwind utilities, e.g. bg-primary, text-accent, border-sand,
+ * font-heading, font-brand, rounded-control, rounded-card.
+ */
+@theme {
+  /* Primary */
+  --color-primary: #024909; /* Forest Green */
+  --color-primary-hover: #04650d;
+
+  /* Support */
+  --color-sand: #deb892; /* Sand Beige */
+  --color-earth: #904e22; /* Earth Brown */
+  --color-white: #ffffff;
+
+  /* Accent */
+  --color-accent: #d0751a; /* Warm Orange */
+  --color-accent-deep: #d0630b; /* Deep Orange */
+
+  /* Status */
+  --color-success: #16a34a;
+  --color-progress: #f59e0b; /* In progress / pending */
+  --color-danger: #dc2626; /* "Warning" in the guide */
+
+  /* Surfaces & text (derived from the guide's page and cards) */
+  --color-canvas: #f8f3ec; /* cream background (style guide) */
+  --color-page: #f3f4f8; /* app dashboard background (designs) */
+  --color-surface: #ffffff;
+  --color-cream: #f6eee4; /* card / hover tint */
+  --color-line: #eadbc8; /* soft beige borders */
+  --color-ink: #111827; /* main text (navy-black) */
+  --color-muted: #6b7280; /* muted secondary text */
+
+  /* Tints used for icon chips, badges and table headers in the designs */
+  --color-accent-soft: #fdeee2;
+  --color-primary-soft: #e6efe8;
+  --color-success-soft: #e7f5ec;
+  --color-danger-soft: #fde8e8;
+  --color-violet: #8b7cf6;
+  --color-violet-soft: #eeecfd;
+  --color-head: #f1f2f6; /* table header row */
+
+  /* Fonts */
+  --font-brand: "Roboto", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
+
+  /* Weights: one step heavier than default so Public Sans reads semi-bold, not light */
+  --font-weight-normal: 500;
+  --font-weight-medium: 600;
+
+  /* Shape: controls 8–12px, cards 12–16px */
+  --radius-control: 10px;
+  --radius-card: 14px;
+}
+
+@layer base {
+  body {
+    @apply bg-canvas font-sans text-[15px] font-normal text-ink;
+  }
+
+  h1 {
+    @apply font-heading text-[40px] leading-tight font-bold tracking-tight text-ink;
+  }
+  h2 {
+    @apply font-heading text-[26px] leading-snug font-bold text-ink;
+  }
+  h3 {
+    @apply font-heading text-lg leading-snug font-semibold text-ink;
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+/*
+ * Fit-to-screen scaling. The designs are drawn for wide (~1500px+) screens, so
+ * on laptops the whole UI scales down instead of forcing sideways scrolling.
+ */
+/* --app-zoom lets full-height layouts undo the zoom: calc(100dvh / var(--app-zoom)) */
+html {
+  --app-zoom: 0.9;
+  zoom: var(--app-zoom);
+}
+@media (max-width: 1679px) {
+  html {
+    --app-zoom: 0.85;
+  }
+}
+@media (max-width: 1439px) {
+  html {
+    --app-zoom: 0.8;
+  }
+}
+@media (max-width: 1279px) {
+  html {
+    --app-zoom: 0.75;
+  }
+}
+
+/* Never scroll the page sideways; wide tables scroll inside their own card. */
+html,
+body {
+  overflow-x: clip;
+}
+
+/* Chart, map and Sankey text: same heavier weight as the rest of the UI */
+.apexcharts-text:not(.apexcharts-datalabel-value),
+.apexcharts-legend-text,
+.apexcharts-tooltip,
+.apexcharts-datalabel {
+  font-weight: 500 !important;
+}
+
+/* Reusable text styles from the guide's text hierarchy */
+@utility text-label {
+  @apply text-[13px] font-medium;
+}
+@utility text-meta {
+  @apply text-sm text-muted;
+}

@@ -1,0 +1,9 @@
+# Keep line endings consistent across Windows / macOS / Linux teammates
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.webp binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
