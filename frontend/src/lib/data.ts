@@ -2,6 +2,12 @@
 // Everything the miner portal shows starts from here; the store (store.ts)
 // keeps changes in the browser until the backend API exists.
 
+import { chainSeed, type OfferMsg } from "./chain";
+import { teamSeed, approvalSeed } from "./roles";
+import { peopleSeed } from "./people";
+export * from "./people";
+export * from "./chain";
+
 export type SiteStatus = "Active" | "Inactive";
 export type Site = {
   id: string;
@@ -75,6 +81,8 @@ export type Inspection = {
   type: string;
   inspector?: string;
   status: InspectionStatus;
+  /** Filled in by the inspector when the inspection is completed or rejected. */
+  result?: { grade: number; sampleId: string; method: string; findings: string; date: string };
 };
 
 export type BuyerRequest = {
@@ -118,6 +126,8 @@ export type Offer = {
   currency: "USD" | "RWF";
   status: OfferStatus;
   sent: string;
+  /** Negotiation thread, oldest first. */
+  history?: OfferMsg[];
 };
 
 export type TxnStatus = "Received" | "Paid" | "Pending" | "Processing" | "Failed";
@@ -136,7 +146,7 @@ export type Txn = {
 export type Doc = {
   id: string;
   name: string;
-  kind: "Mining Licence" | "Export Permit" | "Transport Permit" | "Environmental" | "Certificate" | "Other";
+  kind: "Mining Licence" | "Export Permit" | "Transport Permit" | "Environmental" | "Certificate" | "Tax" | "Company" | "Other";
   siteId?: string;
   number: string;
   issued: string;
@@ -171,7 +181,7 @@ export const WORK_CATEGORIES = ["Miner", "Loader", "Sorter", "Mineral Sorter", "
 
 export const seed = {
   sites: [
-    { id: "kigali", name: "Kigali Gold Mine", district: "Gasabo", location: "Kigali City", lat: -1.89, lng: 30.11, status: "Active", areaHa: 32.5, lastActivity: "Jun 28, 2025", minerals: ["Gold"], licence: "ML-2025-081", licenceExpiry: "Mar 14, 2027", manager: "Jean Uwimana" },
+    { id: "kigali", name: "Kigali Gold Mine", district: "Gasabo", location: "Kigali City", lat: -1.89, lng: 30.11, status: "Active", areaHa: 32.5, lastActivity: "Jun 28, 2025", minerals: ["Gold"], licence: "ML-2025-081", licenceExpiry: "Mar 14, 2027", manager: "Olivier Nsengiyumva" },
     { id: "ruhango", name: "Ruhango Mine", district: "Ruhango", location: "Ruhango", lat: -2.23, lng: 29.78, status: "Active", areaHa: 28.0, lastActivity: "Jun 27, 2025", minerals: ["Gold", "Cassiterite"], licence: "ML-2025-082", licenceExpiry: "Jan 30, 2027", manager: "Claude Mugisha" },
     { id: "nyabihu", name: "Nyabihu Mine", district: "Nyabihu", location: "Nyabihu", lat: -1.65, lng: 29.51, status: "Active", areaHa: 24.7, lastActivity: "Jun 26, 2025", minerals: ["Tantalum", "Coltan"], licence: "ML-2025-083", licenceExpiry: "Nov 02, 2026", manager: "Grace Mukeshimana" },
     { id: "musanze", name: "Musanze Mine", district: "Musanze", location: "Musanze", lat: -1.5, lng: 29.63, status: "Active", areaHa: 26.1, lastActivity: "Jun 25, 2025", minerals: ["Coltan", "Cassiterite"], licence: "ML-2025-087", licenceExpiry: "Sep 05, 2025", manager: "Eric Nshimiyimana" },
@@ -180,7 +190,7 @@ export const seed = {
     { id: "kamonyi", name: "Kamonyi Shaft", district: "Kamonyi", location: "Kamonyi", lat: -2.0, lng: 29.9, status: "Active", areaHa: 12.4, lastActivity: "Jun 16, 2025", minerals: ["Gold"], licence: "ML-2025-091", licenceExpiry: "Feb 11, 2027", manager: "Patrick Habimana" },
     { id: "rulindo", name: "Rutongo Mine", district: "Rulindo", location: "Rulindo", lat: -1.8, lng: 30.05, status: "Active", areaHa: 9.8, lastActivity: "Jun 12, 2025", minerals: ["Cassiterite"], licence: "ML-2025-093", licenceExpiry: "Aug 09, 2027", manager: "Aline Mukamana" },
     { id: "rusizi", name: "Rusizi Site", district: "Rusizi", location: "Rusizi", lat: -2.48, lng: 28.93, status: "Active", areaHa: 7.6, lastActivity: "Jun 10, 2025", minerals: ["Gold"], licence: "ML-2025-095", licenceExpiry: "Oct 30, 2027", manager: "Clarisse Ingabire" },
-    { id: "nyamasheke", name: "Nyamasheke Site", district: "Nyamasheke", location: "Nyamasheke", lat: -2.32, lng: 29.13, status: "Inactive", areaHa: 5.1, lastActivity: "May 29, 2025", minerals: ["Wolframite"], licence: "ML-2024-058", licenceExpiry: "Jul 01, 2026", manager: "Samuel Nkurunziza" },
+    { id: "nyamasheke", name: "Nyamasheke Site", district: "Nyamasheke", location: "Nyamasheke", lat: -2.32, lng: 29.13, status: "Inactive", areaHa: 5.1, lastActivity: "May 29, 2025", minerals: ["Wolframite"], licence: "ML-2024-058", licenceExpiry: "Jul 01, 2026", manager: "Innocent Hakizimana" },
   ] as Site[],
 
   shafts: [
@@ -220,7 +230,7 @@ export const seed = {
 
   lots: [
     { id: "LOT-00124", mineral: "Gold", quantityKg: 500, grade: 98.5, siteId: "kigali", status: "Verified", created: "Aug 28, 2025" },
-    { id: "LOT-00123", mineral: "Coltan", quantityKg: 300, grade: 95.2, siteId: "musanze", status: "Pending", created: "Aug 27, 2025" },
+    { id: "LOT-00123", mineral: "Coltan", quantityKg: 300, grade: 32.4, siteId: "musanze", status: "Verified", created: "Aug 20, 2025" },
     { id: "LOT-00122", mineral: "Tantalum", quantityKg: 200, grade: 93.7, siteId: "nyabihu", status: "Verified", created: "Aug 25, 2025" },
     { id: "LOT-00121", mineral: "Tin", quantityKg: 150, grade: 92.1, siteId: "rubavu", status: "Verified", created: "Aug 24, 2025" },
     { id: "LOT-00120", mineral: "Cassiterite", quantityKg: 1800, grade: 68.4, siteId: "gatumba", status: "Verified", created: "Aug 21, 2025" },
@@ -245,17 +255,48 @@ export const seed = {
     { id: "ER-2025-1037", siteId: "ruhango", shaftId: "R-02", mineral: "Cassiterite", quantityKg: 160, date: "Aug 09, 2025", status: "Approved" },
     { id: "ER-2025-1036", siteId: "musanze", shaftId: "M-02", mineral: "Coltan", quantityKg: 70, date: "Aug 06, 2025", status: "Rejected" },
     { id: "ER-2025-1035", siteId: "kamonyi", shaftId: "KM-01", mineral: "Gold", quantityKg: 105, date: "Aug 03, 2025", status: "Approved" },
+    { id: "ER-2025-1034", siteId: "kigali", shaftId: "K-01", mineral: "Gold", quantityKg: 60, date: "Jul 03, 2025", status: "Approved" },
+    { id: "ER-2025-1033", siteId: "ruhango", shaftId: "R-01", mineral: "Gold", quantityKg: 260, date: "Jul 06, 2025", status: "Approved" },
+    { id: "ER-2025-1032", siteId: "musanze", shaftId: "M-02", mineral: "Coltan", quantityKg: 210, date: "Jul 12, 2025", status: "Approved" },
+    { id: "ER-2025-1031", siteId: "nyabihu", shaftId: "N-01", mineral: "Coltan", quantityKg: 185, date: "Jul 15, 2025", status: "Approved" },
+    { id: "ER-2025-1030", siteId: "rulindo", shaftId: "RT-01", mineral: "Cassiterite", quantityKg: 135, date: "Jul 21, 2025", status: "Approved" },
+    { id: "ER-2025-1029", siteId: "gatumba", shaftId: "G-01", mineral: "Wolframite", quantityKg: 110, date: "Jul 24, 2025", status: "Approved" },
+    { id: "ER-2025-1028", siteId: "kigali", shaftId: "K-01", mineral: "Gold", quantityKg: 85, date: "Jun 03, 2025", status: "Approved" },
+    { id: "ER-2025-1027", siteId: "kamonyi", shaftId: "KM-01", mineral: "Gold", quantityKg: 260, date: "Jun 09, 2025", status: "Approved" },
+    { id: "ER-2025-1026", siteId: "musanze", shaftId: "M-02", mineral: "Coltan", quantityKg: 235, date: "Jun 12, 2025", status: "Approved" },
+    { id: "ER-2025-1025", siteId: "gatumba", shaftId: "G-01", mineral: "Cassiterite", quantityKg: 185, date: "Jun 18, 2025", status: "Approved" },
+    { id: "ER-2025-1024", siteId: "rulindo", shaftId: "RT-01", mineral: "Cassiterite", quantityKg: 160, date: "Jun 21, 2025", status: "Approved" },
+    { id: "ER-2025-1023", siteId: "nyabihu", shaftId: "N-03", mineral: "Tantalum", quantityKg: 110, date: "Jun 27, 2025", status: "Approved" },
+    { id: "ER-2025-1022", siteId: "ruhango", shaftId: "R-01", mineral: "Gold", quantityKg: 85, date: "May 06, 2025", status: "Approved" },
+    { id: "ER-2025-1021", siteId: "kamonyi", shaftId: "KM-01", mineral: "Gold", quantityKg: 60, date: "May 09, 2025", status: "Approved" },
+    { id: "ER-2025-1020", siteId: "nyabihu", shaftId: "N-01", mineral: "Coltan", quantityKg: 235, date: "May 15, 2025", status: "Approved" },
+    { id: "ER-2025-1019", siteId: "gatumba", shaftId: "G-01", mineral: "Cassiterite", quantityKg: 210, date: "May 18, 2025", status: "Approved" },
+    { id: "ER-2025-1018", siteId: "gatumba", shaftId: "G-01", mineral: "Wolframite", quantityKg: 160, date: "May 24, 2025", status: "Approved" },
+    { id: "ER-2025-1017", siteId: "nyabihu", shaftId: "N-03", mineral: "Tantalum", quantityKg: 135, date: "May 27, 2025", status: "Approved" },
+    { id: "ER-2025-1016", siteId: "kigali", shaftId: "K-01", mineral: "Gold", quantityKg: 135, date: "Apr 03, 2025", status: "Approved" },
+    { id: "ER-2025-1015", siteId: "ruhango", shaftId: "R-01", mineral: "Gold", quantityKg: 110, date: "Apr 06, 2025", status: "Approved" },
+    { id: "ER-2025-1014", siteId: "musanze", shaftId: "M-02", mineral: "Coltan", quantityKg: 60, date: "Apr 12, 2025", status: "Approved" },
+    { id: "ER-2025-1013", siteId: "nyabihu", shaftId: "N-01", mineral: "Coltan", quantityKg: 260, date: "Apr 15, 2025", status: "Approved" },
+    { id: "ER-2025-1012", siteId: "rulindo", shaftId: "RT-01", mineral: "Cassiterite", quantityKg: 210, date: "Apr 21, 2025", status: "Approved" },
+    { id: "ER-2025-1011", siteId: "gatumba", shaftId: "G-01", mineral: "Wolframite", quantityKg: 185, date: "Apr 24, 2025", status: "Approved" },
+    { id: "ER-2025-1010", siteId: "kigali", shaftId: "K-01", mineral: "Gold", quantityKg: 160, date: "Mar 03, 2025", status: "Approved" },
+    { id: "ER-2025-1009", siteId: "kamonyi", shaftId: "KM-01", mineral: "Gold", quantityKg: 110, date: "Mar 09, 2025", status: "Approved" },
+    { id: "ER-2025-1008", siteId: "musanze", shaftId: "M-02", mineral: "Coltan", quantityKg: 85, date: "Mar 12, 2025", status: "Approved" },
+    { id: "ER-2025-1007", siteId: "gatumba", shaftId: "G-01", mineral: "Cassiterite", quantityKg: 260, date: "Mar 18, 2025", status: "Approved" },
+    { id: "ER-2025-1006", siteId: "rulindo", shaftId: "RT-01", mineral: "Cassiterite", quantityKg: 235, date: "Mar 21, 2025", status: "Approved" },
+    { id: "ER-2025-1005", siteId: "nyabihu", shaftId: "N-03", mineral: "Tantalum", quantityKg: 185, date: "Mar 27, 2025", status: "Approved" },
   ] as ExtractionRecord[],
 
   inspections: [
-    { id: "INS-2025-0091", lotId: "LOT-2025-0148", mineral: "Cassiterite", siteId: "nyabihu", shaft: "Shaft N-03", submitted: "Aug 28, 2025", type: "Grade Verification", status: "Pending" },
-    { id: "INS-2025-0089", lotId: "LOT-2025-0146", mineral: "Coltan", siteId: "ruhango", shaft: "Shaft R-01", submitted: "Aug 25, 2025", type: "Purity Assay", inspector: "Aline Mukamana", status: "Scheduled" },
-    { id: "INS-2025-0087", lotId: "LOT-2025-0143", mineral: "Wolframite", siteId: "musanze", shaft: "Shaft M-02", submitted: "Aug 21, 2025", type: "Pre-export Certification", inspector: "Eric Nshimiyimana", status: "In Progress" },
-    { id: "INS-2025-0084", lotId: "LOT-2025-0139", mineral: "Cassiterite", siteId: "kigali", shaft: "Shaft K-04", submitted: "Aug 14, 2025", type: "Grade Verification", inspector: "Diane Uwamahoro", status: "Completed" },
-    { id: "INS-2025-0081", lotId: "LOT-2025-0136", mineral: "Coltan", siteId: "nyabihu", shaft: "Shaft N-01", submitted: "Aug 09, 2025", type: "Site Compliance", inspector: "Patrick Habimana", status: "Rejected" },
-    { id: "INS-2025-0078", lotId: "LOT-2025-0133", mineral: "Coltan", siteId: "ruhango", shaft: "Shaft R-02", submitted: "Aug 03, 2025", type: "Purity Assay", inspector: "Aline Mukamana", status: "Completed" },
-    { id: "INS-2025-0074", lotId: "LOT-2025-0129", mineral: "Gold", siteId: "kigali", shaft: "Shaft K-01", submitted: "Jul 28, 2025", type: "Grade Verification", inspector: "Diane Uwamahoro", status: "Completed" },
-    { id: "INS-2025-0070", lotId: "LOT-2025-0125", mineral: "Cassiterite", siteId: "gatumba", shaft: "Shaft G-01", submitted: "Jul 21, 2025", type: "Pre-export Certification", inspector: "Eric Nshimiyimana", status: "Completed" },
+    { id: "INS-2025-0091", lotId: "LOT-00123", mineral: "Coltan", siteId: "musanze", shaft: "Shaft M-02", submitted: "Aug 21, 2025", type: "Grade Verification", inspector: "Aline Mukamana", status: "Completed", result: { grade: 32.1, sampleId: "SMP-25-0851", method: "XRF + wet assay", findings: "Grade matches declaration (Ta2O5).", date: "Aug 22, 2025" } },
+    { id: "INS-2025-0092", lotId: "LOT-00121", mineral: "Tin", siteId: "rubavu", shaft: "Shaft C-01", submitted: "Aug 28, 2025", type: "Pre-export Certification", status: "Pending" },
+    { id: "INS-2025-0089", lotId: "LOT-00118", mineral: "Coltan", siteId: "ruhango", shaft: "Shaft R-01", submitted: "Aug 25, 2025", type: "Purity Assay", inspector: "Aline Mukamana", status: "Scheduled" },
+    { id: "INS-2025-0087", lotId: "LOT-00124", mineral: "Gold", siteId: "kigali", shaft: "Shaft K-04", submitted: "Aug 28, 2025", type: "Pre-export Certification", inspector: "Eric Nshimiyimana", status: "In Progress" },
+    { id: "INS-2025-0084", lotId: "LOT-00120", mineral: "Cassiterite", siteId: "gatumba", shaft: "Shaft G-01", submitted: "Aug 21, 2025", type: "Grade Verification", inspector: "Diane Uwamahoro", status: "Completed", result: { grade: 68.4, sampleId: "SMP-25-0841", method: "XRF + wet assay", findings: "Grade matches declaration. Bags sealed and tagged.", date: "Aug 22, 2025" } },
+    { id: "INS-2025-0081", lotId: "LOT-00116", mineral: "Cassiterite", siteId: "rulindo", shaft: "Shaft RT-01", submitted: "Aug 07, 2025", type: "Site Compliance", inspector: "Patrick Habimana", status: "Rejected", result: { grade: 52.3, sampleId: "SMP-25-0806", method: "XRF", findings: "Measured grade 52.3% is far below the declared 66.1%. Re-sampling required.", date: "Aug 09, 2025" } },
+    { id: "INS-2025-0078", lotId: "LOT-00122", mineral: "Tantalum", siteId: "nyabihu", shaft: "Shaft N-03", submitted: "Aug 25, 2025", type: "Purity Assay", inspector: "Aline Mukamana", status: "Completed", result: { grade: 93.7, sampleId: "SMP-25-0862", method: "ICP-OES", findings: "Purity confirmed. No radioactivity above limits.", date: "Aug 27, 2025" } },
+    { id: "INS-2025-0074", lotId: "LOT-00119", mineral: "Gold", siteId: "kigali", shaft: "Shaft K-01", submitted: "Aug 18, 2025", type: "Grade Verification", inspector: "Diane Uwamahoro", status: "Completed", result: { grade: 97.9, sampleId: "SMP-25-0829", method: "Fire assay", findings: "Grade matches declaration.", date: "Aug 19, 2025" } },
+    { id: "INS-2025-0070", lotId: "LOT-00117", mineral: "Wolframite", siteId: "gatumba", shaft: "Shaft G-01", submitted: "Aug 11, 2025", type: "Pre-export Certification", inspector: "Eric Nshimiyimana", status: "Completed", result: { grade: 62.0, sampleId: "SMP-25-0797", method: "XRF + wet assay", findings: "Conflict-free. ICGLR certificate issued.", date: "Aug 13, 2025" } },
   ] as Inspection[],
 
   requests: [
@@ -274,7 +315,10 @@ export const seed = {
 
   offers: [
     { id: "OFF-0031", requestId: "MKT-2025-0218", lotId: "LOT-00120", quantityKg: 1500, pricePerKg: 18.4, currency: "USD", status: "Sent", sent: "Aug 26, 2025" },
-    { id: "OFF-0029", requestId: "MKT-2025-0216", lotId: "LOT-00123", quantityKg: 300, pricePerKg: 43, currency: "USD", status: "Countered", sent: "Aug 23, 2025" },
+    { id: "OFF-0029", requestId: "MKT-2025-0216", lotId: "LOT-00123", quantityKg: 300, pricePerKg: 43, currency: "USD", status: "Countered", sent: "Aug 23, 2025", history: [
+      { by: "You", pricePerKg: 43, quantityKg: 300, note: "Pre-export certificate in progress.", date: "Aug 23, 2025" },
+      { by: "Buyer", pricePerKg: 41.5, quantityKg: 300, note: "We can do $41.50 FOB Dar es Salaam if delivered by Oct 1.", date: "Aug 29, 2025" },
+    ] },
     { id: "OFF-0024", requestId: "MKT-2025-0215", lotId: "LOT-00117", quantityKg: 900, pricePerKg: 14.5, currency: "USD", status: "Accepted", sent: "Aug 14, 2025" },
     { id: "OFF-0021", requestId: "MKT-2025-0213", lotId: "LOT-00116", quantityKg: 1200, pricePerKg: 17.5, currency: "USD", status: "Accepted", sent: "Aug 08, 2025" },
   ] as Offer[],
@@ -303,7 +347,19 @@ export const seed = {
     { id: "DOC-005", name: "Transport Permit – Northern Route", kind: "Transport Permit", number: "TRP-2025-0198", issued: "Jun 15, 2025", expires: "Dec 15, 2025", fileName: "Transport_Permit_TRP-2025-0198.pdf" },
     { id: "DOC-006", name: "Environmental Impact Assessment – Gatumba", kind: "Environmental", siteId: "gatumba", number: "EIA-2024-033", issued: "Nov 20, 2024", fileName: "EIA_Gatumba_2024.pdf" },
     { id: "DOC-007", name: "Conflict-Free Certificate – LOT-00117", kind: "Certificate", number: "CFC-2025-0087", issued: "Aug 14, 2025", fileName: "CFC_LOT-00117.pdf" },
+    { id: "DOC-008", name: "Tax Clearance Certificate – RRA", kind: "Tax", number: "RRA-TCC-2025-5521", issued: "Jan 20, 2025", expires: "Dec 31, 2025", fileName: "RRA_Tax_Clearance_2025.pdf" },
+    { id: "DOC-009", name: "Company Registration – RDB", kind: "Company", number: "RDB-104882113", issued: "Feb 03, 2021", fileName: "RDB_Certificate_of_Incorporation.pdf" },
+    { id: "DOC-010", name: "RSSB Employer Registration", kind: "Company", number: "RSSB-EMP-77310", issued: "Mar 11, 2021", fileName: "RSSB_Employer_Registration.pdf" },
   ] as Doc[],
+
+  ...chainSeed,
+
+  ...peopleSeed,
+
+  members: teamSeed,
+  approvals: approvalSeed,
+  /** Who is using the portal (set by sign-in once auth exists). */
+  sessionMemberId: "M-001",
 };
 
 export type AppData = typeof seed;

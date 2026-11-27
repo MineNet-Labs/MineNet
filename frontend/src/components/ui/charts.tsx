@@ -206,6 +206,36 @@ export function GroupedBars({
   );
 }
 
+/** Grouped bars with any number of series (one per mineral), driven by store data. */
+export function MineralBars({
+  labels,
+  series,
+  height = 250,
+  unit = " t",
+}: {
+  labels: string[];
+  series: { name: string; color: string; values: number[] }[];
+  height?: number;
+  unit?: string;
+}) {
+  const options: ApexOptions = {
+    ...base,
+    colors: series.map((s) => s.color),
+    plotOptions: { bar: { columnWidth: series.length > 3 ? "75%" : "58%", borderRadius: 6, borderRadiusApplication: "end" } },
+    stroke: { show: true, width: series.length > 3 ? 2 : 5, colors: ["transparent"] },
+    grid: { borderColor: "#F1F2F6", strokeDashArray: 0, yaxis: { lines: { show: false } } },
+    xaxis: {
+      categories: labels,
+      axisBorder: { show: true, color: "#E5E7EB" },
+      axisTicks: { show: false },
+      labels: { style: { fontSize: "14px", colors: "#374151" } },
+    },
+    yaxis: { min: 0, forceNiceScale: true, labels: { style: { fontSize: "14px", colors: "#374151" }, formatter: (v) => `${+v.toFixed(1)}` } },
+    tooltip: { shared: true, intersect: false, y: { formatter: (v) => `${v}${unit}` } },
+  };
+  return <Chart type="bar" height={height} options={options} series={series.map((s) => ({ name: s.name, data: s.values }))} />;
+}
+
 /* ------------------------------------------------------------ area line */
 
 /** Smooth area chart with optional second series and y-axis. The latest point is live. */

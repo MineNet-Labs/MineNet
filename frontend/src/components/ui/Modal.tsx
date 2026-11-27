@@ -1,9 +1,33 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconX } from "@tabler/icons-react";
 
-/** Centered dialog with header, scrollable body and footer. Esc / backdrop closes. */
+/** Stops the page behind from scrolling while a dialog is open. */
+let locks = 0;
+function useScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const html = document.documentElement;
+    if (locks++ === 0) {
+      const gap = window.innerWidth - html.clientWidth;
+      html.style.overflow = "hidden";
+      html.style.paddingRight = gap ? `${gap}px` : "";
+    }
+    return () => {
+      if (--locks === 0) {
+        html.style.overflow = "";
+        html.style.paddingRight = "";
+      }
+    };
+  }, [active]);
+}
+
+/**
+ * Pop-up dialog over the current page. Esc / backdrop closes. Nothing
+ * scrolls: the page behind is locked, the dialog has no scrollbar, and a
+ * form taller than the screen is scaled down to fit.
+ */
 export function Modal({
   title,
   subtitle,
@@ -19,21 +43,35 @@ export function Modal({
   footer?: React.ReactNode;
   width?: number;
 }) {
+  useScrollLock(true);
+  const box = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = () => setScale(Math.min(1, (window.innerHeight - 32) / el.offsetHeight));
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    window.addEventListener("resize", fit);
+    return () => (ro.disconnect(), window.removeEventListener("resize", fit));
+  }, []);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/10 p-4" onClick={onClose} role="presentation">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-ink/10 p-4" onClick={onClose} role="presentation">
       <div
+        ref={box}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[calc(100dvh/var(--app-zoom,1)-2rem)] w-full flex-col rounded-[22px] bg-white shadow-[0_20px_60px_rgba(17,24,39,0.18)]"
-        style={{ maxWidth: width }}
+        className="flex w-full shrink-0 flex-col rounded-[22px] bg-white shadow-[0_20px_60px_rgba(17,24,39,0.18)]"
+        style={{ maxWidth: width, transform: scale < 1 ? `scale(${scale})` : undefined }}
       >
         <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-6 pt-6 pb-5">
           <div>
@@ -44,7 +82,7 @@ export function Modal({
             <IconX className="size-5" stroke={2.4} />
           </button>
         </div>
-        <div className="overflow-y-auto px-6 py-5">{children}</div>
+        <div className="px-6 py-5">{children}</div>
         {footer && <div className="flex items-center justify-end gap-4 border-t border-gray-100 px-6 py-4">{footer}</div>}
       </div>
     </div>

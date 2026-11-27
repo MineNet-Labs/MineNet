@@ -1,5 +1,12 @@
 "use client";
 
+import { openForm } from "@/components/FormHost";
+
+import Link from "next/link";
+import { withConfirm } from "@/components/ui/Confirm";
+import { useRouter } from "next/navigation";
+import { acceptOffer } from "@/components/chain-forms";
+
 import { useCallback, useMemo, useState } from "react";
 import {
   IconBuildingStore,
@@ -34,7 +41,7 @@ import {
   CancelButton,
   formValues,
 } from "@/components/ui";
-import { ListLotModal, MakeOfferModal } from "@/components/forms";
+import { MakeOfferModal } from "@/components/forms";
 import { fmtKg, type BuyerRequest, type Listing } from "@/lib/data";
 import { update, useStore } from "@/lib/store";
 import { useQueryParam } from "@/lib/useQueryParam";
@@ -54,6 +61,7 @@ const GRADES = ["≥ 60%", "Below 60%"];
 type Tab = "demand" | "listings" | "offers";
 
 export default function MarketplacePage() {
+  const router = useRouter();
   const requests = useStore((s) => s.requests);
   const listings = useStore((s) => s.listings);
   const offers = useStore((s) => s.offers);
@@ -64,7 +72,6 @@ export default function MarketplacePage() {
   const [grade, setGrade] = useState("");
   const [qty, setQty] = useState("");
   const [search, setSearch] = useState("");
-  const [sell, setSell] = useState(false);
   const [offerFor, setOfferFor] = useState<BuyerRequest | null>(null);
   const [details, setDetails] = useState<BuyerRequest | null>(null);
   const [editing, setEditing] = useState<Listing | null>(null);
@@ -109,7 +116,7 @@ export default function MarketplacePage() {
         title="Marketplace"
         subtitle="Discover mineral demand and connect with verified buyers."
         actions={
-          <PrimaryButton icon={IconCirclePlus} className="rounded-full" onClick={() => setSell(true)}>
+          <PrimaryButton icon={IconCirclePlus} className="rounded-full" onClick={() => openForm("sell")}>
             Sell on Marketplace
           </PrimaryButton>
         }
@@ -135,7 +142,7 @@ export default function MarketplacePage() {
               >
                 {t.key === "demand" && <IconBuildingStore className="size-5" />}
                 {t.label}
-                <span className="align-super text-[11px]">{t.count}</span>
+               
               </button>
             ))}
           </div>
@@ -159,7 +166,7 @@ export default function MarketplacePage() {
               {demand.length === 0 ? (
                 <Empty>No buyer requests match these filters.</Empty>
               ) : (
-                <table className="w-full min-w-[1000px] text-left text-sm [&_td]:whitespace-nowrap">
+                <table className="w-full min-w-[1000px] text-left text-sm">
                   <thead className="bg-head">
                     <tr>
                       {["Buyer", "Mineral", "Remaining / Required", "Min. grade", "Destination", "Deadline"].map((h) => (
@@ -201,9 +208,9 @@ export default function MarketplacePage() {
                           </td>
                           <td className="px-3">
                             <span className="flex items-center justify-end gap-4">
-                              <button onClick={() => setDetails(r)} className="flex items-center gap-1.5 text-ink/80 hover:text-ink">
+                              <Link href={`/miner/marketplace/requests/${r.id}`} className="flex items-center gap-1.5 text-ink/80 hover:text-ink">
                                 <IconEye className="size-[18px]" /> View Details
-                              </button>
+                              </Link>
                               <button onClick={() => setOfferFor(r)} className="rounded-full bg-[#1F5B3A] px-4 py-2 font-medium text-white hover:bg-primary">
                                 Make Offer
                               </button>
@@ -224,10 +231,10 @@ export default function MarketplacePage() {
             {listings.length === 0 ? (
               <Empty>
                 You have no listings yet.{" "}
-                <button onClick={() => setSell(true)} className="font-medium text-accent hover:underline">Sell a verified lot</button>
+                <button onClick={() => openForm("sell")} className="font-medium text-accent hover:underline">Sell a verified lot</button>
               </Empty>
             ) : (
-              <table className="w-full min-w-[900px] text-left text-sm [&_td]:whitespace-nowrap">
+              <table className="w-full min-w-[900px] text-left text-sm">
                 <thead className="bg-head">
                   <tr>
                     {["Listing", "Lot", "Mineral", "Quantity", "Asking price", "Location", "Offers", "Posted", "Status", ""].map((h, i) => (
@@ -256,10 +263,13 @@ export default function MarketplacePage() {
                                 label: "Withdraw listing",
                                 icon: IconTrash,
                                 danger: true,
-                                onClick: () => {
-                                  update((s) => ({ listings: s.listings.map((x) => (x.id === l.id ? { ...x, status: "Withdrawn" } : x)) }));
-                                  toast(`Listing ${l.id} withdrawn`, "info");
-                                },
+                                onClick: withConfirm(
+                                  { title: "Withdraw listing?", message: `Buyers will no longer see ${l.lotId} on the marketplace.`, confirmLabel: "Withdraw", tone: "danger" },
+                                  () => {
+                                    update((s) => ({ listings: s.listings.map((x) => (x.id === l.id ? { ...x, status: "Withdrawn" } : x)) }));
+                                    toast(`Listing ${l.id} withdrawn`, "info");
+                                  },
+                                ),
                               },
                             ]}
                           />
@@ -278,7 +288,7 @@ export default function MarketplacePage() {
             {offers.length === 0 ? (
               <Empty>You haven&apos;t sent any offers yet. Open Buyer Demand and choose “Make Offer”.</Empty>
             ) : (
-              <table className="w-full min-w-[900px] text-left text-sm [&_td]:whitespace-nowrap">
+              <table className="w-full min-w-[900px] text-left text-sm">
                 <thead className="bg-head">
                   <tr>
                     {["Offer", "Buyer", "Mineral", "Your lot", "Quantity", "Price", "Sent", "Status", ""].map((h, i) => (
@@ -291,10 +301,10 @@ export default function MarketplacePage() {
                     const r = reqById(o.requestId);
                     return (
                       <tr key={o.id} className="border-b border-gray-100">
-                        <td className="px-3 py-3.5 font-semibold">{o.id}</td>
+                        <td className="px-3 py-3.5 font-semibold"><Link href={`/miner/marketplace/offers/${o.id}`} className="hover:text-[#1F5B3A] hover:underline">{o.id}</Link></td>
                         <td className="px-3">{r?.buyer ?? o.requestId}</td>
                         <td className="px-3">{r?.mineral}</td>
-                        <td className="px-3">{o.lotId}</td>
+                        <td className="px-3"><Link href={`/miner/mineral-lots/${o.lotId}`} className="hover:underline">{o.lotId}</Link></td>
                         <td className="px-3">{fmtKg(o.quantityKg)}</td>
                         <td className="px-3">${o.pricePerKg}/kg</td>
                         <td className="px-3 text-ink/70">{o.sent}</td>
@@ -306,11 +316,15 @@ export default function MarketplacePage() {
                                 {
                                   label: "Accept counter-offer",
                                   icon: IconCheck,
-                                  onClick: () => {
-                                    update((s) => ({ offers: s.offers.map((x) => (x.id === o.id ? { ...x, status: "Accepted" } : x)) }));
-                                    toast(`Counter-offer from ${r?.buyer} accepted`);
-                                  },
+                                  onClick: withConfirm(
+                                    { title: "Accept counter-offer?", message: `This agrees the sale of ${o.lotId} to ${r?.buyer}. Their payment is locked in escrow and the lot is marked sold.`, confirmLabel: "Accept and sell" },
+                                    () => {
+                                      acceptOffer(o.id, "You");
+                                      toast(`Counter-offer from ${r?.buyer} accepted: payment locked in escrow`);
+                                    },
+                                  ),
                                 },
+                                { label: "Open negotiation", icon: IconEye, onClick: () => router.push(`/miner/marketplace/offers/${o.id}`) },
                                 {
                                   label: "Decline",
                                   icon: IconArrowBackUp,
@@ -349,7 +363,6 @@ export default function MarketplacePage() {
         )}
       </Card>
 
-      {sell && <ListLotModal onClose={() => setSell(false)} onListed={() => setTab("listings")} />}
       {offerFor && <MakeOfferModal request={offerFor} onClose={() => setOfferFor(null)} />}
       {details && (
         <Modal

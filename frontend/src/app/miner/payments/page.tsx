@@ -1,6 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { can } from "@/lib/roles";
+
+import { useQueryParam } from "@/lib/useQueryParam";
+
+import { useCallback, useMemo, useState } from "react";
+import { confirmAction } from "@/components/ui/Confirm";
 import {
   IconArrowDown,
   IconArrowDownLeft,
@@ -33,9 +38,10 @@ import {
 } from "@/components/ui";
 import { Sparkline } from "@/components/ui/charts";
 import { fmtNum, type Txn } from "@/lib/data";
-import { update, useStore } from "@/lib/store";
+import { update, useStore, useMe } from "@/lib/store";
 import { downloadCSV, downloadFile } from "@/lib/csv";
 import { RecordPaymentModal } from "./RecordPaymentModal";
+import { EscrowCard } from "./EscrowCard";
 
 /* ------------------------------------------------------------ KPI tile */
 
@@ -77,13 +83,20 @@ const USD_RWF = 1400; // indicative rate for totals only
 const amountText = (t: Txn) => (t.currency === "USD" ? fmtNum(t.amount, 2) : fmtNum(t.amount));
 
 export default function PaymentsPage() {
+  const me = useMe();
   const txns = useStore((s) => s.txns);
   const [tab, setTab] = useState<"in" | "out">("in");
   const [status, setStatus] = useState("");
   const [method, setMethod] = useState("");
+  const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
 
-  const list = useMemo(() => txns.filter((t) => t.direction === tab), [txns, tab]);
+  useQueryParam("q", useCallback((v: string) => {
+    setSearch(v);
+    const hit = txns.find((t) => t.id === v);
+    if (hit) setTab(hit.direction);
+  }, [txns]));
+  const list = useMemo(() => txns.filter((t) => t.direction === tab && (!search || `${t.id} ${t.party} ${t.ref}`.toLowerCase().includes(search.toLowerCase()))), [txns, tab, search]);
   const rows = useMemo(() => list.filter((t) => (!status || t.status === status) && (!method || t.method === method)), [list, status, method]);
   const { rows: page, pager } = usePaged(rows, 5);
 
@@ -94,7 +107,8 @@ export default function PaymentsPage() {
   const completed = txns.filter((t) => t.status === "Received" || t.status === "Paid").length;
   const unpaidSalaries = txns.filter((t) => t.direction === "out" && t.ref.startsWith("Salary") && t.status !== "Paid");
 
-  const setTxnStatus = (id: string, s: Txn["status"], msg: string) => {
+  const setTxnStatus = async (id: string, s: Txn["status"], msg: string) => {
+    if (!(await confirmAction({ title: "Update payment?", message: `${id} will be marked ${s.toLowerCase()}.`, confirmLabel: "Update" }))) return;
     update((st) => ({ txns: st.txns.map((t) => (t.id === id ? { ...t, status: s } : t)) }));
     toast(msg, "info");
   };
@@ -110,8 +124,8 @@ export default function PaymentsPage() {
   return (
     <>
       <PageHeader
-        title="Payments & Finance"
-        subtitle="Track income from mineral sales, company expenses and worker salaries in one place."
+        title="Payments & Escrow"
+        subtitle="Track sale proceeds in escrow, income, company expenses and worker salaries in one place."
         actions={
           <>
             <DateRange label="01 Aug, 2025 – 31 Aug, 2025" />
@@ -120,13 +134,22 @@ export default function PaymentsPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <FinanceTile icon={IconTrendingUp} tone="green" label="Total Income" currency="RWF" value={millions(income)} delta="+14%" up good spark={[3, 4, 3.5, 5, 4.5, 6, 8]} />
         <FinanceTile icon={IconTrendingDown} tone="orange" label="Total Expenses" currency="RWF" value={millions(expenses)} delta="+6%" up={false} good={false} spark={[3, 5, 3.5, 6, 4, 7, 5]} />
         <FinanceTile icon={IconClock} tone="orange" label="Pending Payments" currency="RWF" value={millions(pending)} delta="-9%" up={false} good={false} spark={[3, 7, 4, 6, 3.5, 4, 3]} />
         <FinanceTile icon={IconCircleCheck} tone="violet" label="Completed Payments" value={String(completed)} delta="+18" up good spark={[3, 3.5, 4.5, 4, 5.5, 6, 8]} />
         <FinanceTile icon={IconUsers} tone="red" label="Outstanding Salaries" currency="RWF" value={millions(unpaidSalaries.reduce((a, t) => a + t.amount, 0))} delta={`${unpaidSalaries.length} workers`} up={false} good={false} spark={[3, 3.5, 3.2, 5, 4.5, 6, 8]} />
       </div>
+
+      {search && (
+        <p className="pl-2 text-sm">
+          Showing results for “{search}” ·{" "}
+          <button onClick={() => setSearch("")} className="font-medium text-accent hover:underline">Clear</button>
+        </p>
+      )}
+
+      {can.finance(me.role) && <EscrowCard />}
 
       <Card className="overflow-hidden pt-6">
         <div className="flex items-center justify-between px-6">
@@ -168,7 +191,7 @@ export default function PaymentsPage() {
             >
               <t.icon className="size-4" stroke={2.2} />
               {t.label}
-              <span className="align-super text-[11px]">{txns.filter((x) => x.direction === t.key).length}</span>
+              
             </button>
           ))}
         </div>
@@ -177,7 +200,7 @@ export default function PaymentsPage() {
           {page.length === 0 ? (
             <Empty>No transactions match these filters.</Empty>
           ) : (
-            <table className="w-full min-w-[1000px] text-left text-sm [&_td]:whitespace-nowrap">
+            <table className="w-full min-w-[1000px] text-left text-sm">
               <thead className="bg-head">
                 <tr>
                   <th className="px-4 py-3.5 text-[13px] font-medium">Transaction ID</th>

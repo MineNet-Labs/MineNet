@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { withConfirm } from "@/components/ui/Confirm";
 import { useMemo, useState } from "react";
 import { IconBuildingFactory2, IconCircleCheck, IconDownload, IconLock, IconPick, IconPlus, IconRuler, IconTool, IconPlayerPlay } from "@tabler/icons-react";
 import {
@@ -55,7 +56,7 @@ export default function MineShaftsPage() {
         actions={<PrimaryButton icon={IconPlus} onClick={() => setOpen(true)}>Add Shaft</PrimaryButton>}
       />
 
-      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={IconPick} tone="orange" label="Total Shafts" value={shafts.length} delta="+1" spark={[3, 3.5, 4, 4, 5, 5.5, 7]} />
         <StatCard icon={IconCircleCheck} tone="green" label="Operational" value={count("Operational")} delta="+1" spark={[3, 4, 3.5, 5, 5, 6, 8]} />
         <StatCard icon={IconTool} tone="orange" label="Under Maintenance" value={count("Maintenance")} delta="0" deltaDir="none" deltaClass="text-ink/70" spark={[3, 4, 3, 4, 3.5, 4, 4]} />
@@ -92,14 +93,14 @@ export default function MineShaftsPage() {
           {page.length === 0 ? (
             <Empty>No shafts match these filters.</Empty>
           ) : (
-            <table className="w-full text-left text-[15px] [&_td]:whitespace-nowrap">
+            <table className="w-full text-left text-[15px]">
               <thead className="bg-head">
                 <tr>{["Shaft", "Mining site", "Mineral", "Depth", "Approved output", "Last inspection", "Status", ""].map((h, i) => <th key={i} className="px-4 py-3.5 text-[13px] font-medium">{h}</th>)}</tr>
               </thead>
               <tbody>
                 {page.map((s) => (
                   <tr key={s.id} className="border-b border-gray-100">
-                    <td className="px-4 py-3.5 font-semibold">{s.name}</td>
+                    <td className="px-4 py-3.5 font-semibold"><Link href={`/miner/mine-shafts/${s.id}`} className="hover:text-[#1F5B3A] hover:underline">{s.name}</Link></td>
                     <td className="px-4"><Link href={`/miner/mining-sites/${s.siteId}`} className="hover:text-[#1F5B3A] hover:underline">{siteName(state, s.siteId)}</Link></td>
                     <td className="px-4">{s.mineral}</td>
                     <td className="px-4">{s.depthM} m</td>
@@ -111,7 +112,7 @@ export default function MineShaftsPage() {
                         items={[
                           ...(s.status !== "Operational" ? [{ label: "Mark operational", icon: IconPlayerPlay, onClick: () => setStatusOf(s.id, "Operational") }] : []),
                           ...(s.status !== "Maintenance" ? [{ label: "Set under maintenance", icon: IconTool, onClick: () => setStatusOf(s.id, "Maintenance") }] : []),
-                          ...(s.status !== "Closed" ? [{ label: "Close shaft", icon: IconLock, danger: true, onClick: () => setStatusOf(s.id, "Closed") }] : []),
+                          ...(s.status !== "Closed" ? [{ label: "Close shaft", icon: IconLock, danger: true, onClick: withConfirm({ title: "Close shaft?", message: `${s.name} will be marked closed and no new extraction can be recorded there.`, confirmLabel: "Close shaft", tone: "danger" }, () => setStatusOf(s.id, "Closed")) }] : []),
                         ]}
                       />
                     </td>

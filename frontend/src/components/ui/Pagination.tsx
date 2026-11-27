@@ -55,7 +55,7 @@ export function Pagination({
               key={p}
               onClick={() => onChange(p)}
               aria-current={p === page ? "page" : undefined}
-              className={p === page ? `${base} border-transparent bg-[#E8792B] text-white` : `${base} border-gray-200 text-ink hover:bg-page`}
+              className={p === page ? `${base} border-transparent bg-[#1F5B3A] text-white` : `${base} border-gray-200 text-ink hover:bg-page`}
             >
               {p}
             </button>

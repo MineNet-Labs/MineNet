@@ -1,7 +1,11 @@
 "use client";
 
+import { useQueryParam } from "@/lib/useQueryParam";
+
+import { mineralColor, monthlyByMineral } from "@/lib/series";
+
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { IconArrowUp, IconBolt, IconChartBar, IconDownload, IconFileText, IconPick, IconPlus, IconSearch } from "@tabler/icons-react";
 import {
   Card,
@@ -26,7 +30,6 @@ import { fmtNum } from "@/lib/data";
 import { siteName, useStore } from "@/lib/store";
 import { downloadCSV } from "@/lib/csv";
 
-const COLORS = ["#B5551A", "#1F5B3A", "#F7D7BD", "#8B7CF6"];
 
 export default function ExtractionRecordsPage() {
   const state = useStore((s) => s);
@@ -34,6 +37,7 @@ export default function ExtractionRecordsPage() {
   const [tab, setTab] = useState("all");
   const [mineral, setMineral] = useState("");
   const [search, setSearch] = useState("");
+  useQueryParam("q", useCallback((v: string) => setSearch(v), []));
   const [sortDesc, setSortDesc] = useState(true);
   const [open, setOpen] = useState(false);
 
@@ -49,11 +53,12 @@ export default function ExtractionRecordsPage() {
   const { rows: page, pager } = usePaged(rows, 6);
 
   const approvedKg = records.filter((r) => r.status === "Approved").reduce((t, r) => t + r.quantityKg, 0);
+  const monthly = useMemo(() => monthlyByMineral(records), [records]);
   const breakdown = useMemo(() => {
     const m = new Map<string, number>();
     records.forEach((r) => m.set(r.mineral, (m.get(r.mineral) ?? 0) + r.quantityKg));
     const total = [...m.values()].reduce((a, b) => a + b, 0) || 1;
-    return [...m].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, kg], i) => ({ name, pct: Math.round((kg / total) * 100), color: COLORS[i] }));
+    return [...m].sort((a, b) => b[1] - a[1]).map(([name, kg]) => ({ name, pct: Math.round((kg / total) * 100), color: mineralColor(name) }));
   }, [records]);
 
   const exportRecords = () => {
@@ -78,12 +83,12 @@ export default function ExtractionRecordsPage() {
         actions={
           <>
             <DateRange />
-            <PrimaryButton icon={IconPlus} tone="orange" onClick={() => setOpen(true)}>New Record</PrimaryButton>
+            <PrimaryButton icon={IconPlus} onClick={() => setOpen(true)}>New Record</PrimaryButton>
           </>
         }
       />
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_410px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1fr_410px]">
         <Card className="self-start px-5 pt-5">
           <div className="flex items-center justify-between border-b border-gray-100 px-2">
             <Tabs
@@ -109,7 +114,7 @@ export default function ExtractionRecordsPage() {
             {page.length === 0 ? (
               <Empty>No records match these filters.</Empty>
             ) : (
-              <table className="mt-4 w-full text-left text-[15px] [&_td]:whitespace-nowrap">
+              <table className="mt-4 w-full text-left text-[15px]">
                 <thead className="bg-head">
                   <tr>
                     <th className="py-3 pr-3 pl-7 font-medium">Record ID</th>
@@ -148,9 +153,9 @@ export default function ExtractionRecordsPage() {
               <span className="whitespace-nowrap">Extraction Overview</span>
             </CardTitle>
             <p className="mt-5 flex items-center gap-3 font-heading text-[34px] font-bold">{fmtNum(approvedKg)} kg <LiveBadge /></p>
-            <p className="flex items-center gap-1 text-[15px] text-[#1F5B3A]"><IconArrowUp className="size-4" /> +12.5% vs previous period</p>
+            <p className="text-[15px] text-ink/70">Approved, last {monthly.labels.length} months</p>
             <div className="mt-2 px-6">
-              <AreaChart height={150} yMax={10} unit=" t" series={[{ name: "Extracted", color: "#B5551A", values: [4, 6.5, 6, 6.1, 7.3, 8.6], fillOpacity: 0.12 }]} />
+              <AreaChart height={150} unit=" t" xLabels={monthly.labels} series={[{ name: "Extracted", color: "#B5551A", values: monthly.totals, fillOpacity: 0.12 }]} />
             </div>
           </Card>
 

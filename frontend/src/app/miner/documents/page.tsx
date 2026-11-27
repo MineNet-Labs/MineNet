@@ -1,7 +1,15 @@
 "use client";
 
+import { openForm } from "@/components/FormHost";
+
+import { useQueryParam } from "@/lib/useQueryParam";
+
+
+import { withConfirm } from "@/components/ui/Confirm";
+
+
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { IconAlertTriangle, IconCertificate, IconDownload, IconFileText, IconRefresh, IconTrash, IconUpload, IconCalendarDue } from "@tabler/icons-react";
 import {
   Card,
@@ -18,7 +26,6 @@ import {
   usePaged,
   type BadgeTone,
 } from "@/components/ui";
-import { UploadDocModal } from "@/components/forms";
 import type { Doc } from "@/lib/data";
 import { siteName, update, useStore } from "@/lib/store";
 import { downloadFile } from "@/lib/csv";
@@ -37,23 +44,26 @@ function validity(d: Doc): { label: string; tone: BadgeTone; days?: number } {
 
 export default function DocumentsPage() {
   const state = useStore((s) => s);
-  const { docs } = state;
+  // Company-wide papers only (tax, registration, permits). Site papers live on each site's page.
+  const docs = state.docs.filter((d) => !d.siteId);
+  const siteDocs = state.docs.filter((d) => d.siteId);
   const [kind, setKind] = useState("");
   const [valid, setValid] = useState("");
-  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  useQueryParam("q", useCallback((v: string) => setSearch(v), []));
 
   const rows = useMemo(
     () =>
       docs.filter((d) => {
         const v = validity(d).label;
-        return (!kind || d.kind === kind) && (!valid || (valid === "Expiring soon" ? v.startsWith("Expires") : v === valid));
+        return (!search || `${d.name} ${d.number}`.toLowerCase().includes(search.toLowerCase())) && (!kind || d.kind === kind) && (!valid || (valid === "Expiring soon" ? v.startsWith("Expires") : v === valid));
       }),
-    [docs, kind, valid],
+    [docs, kind, valid, search],
   );
   const { rows: page, pager } = usePaged(rows, 8);
 
   const expiring = docs.filter((d) => validity(d).label.startsWith("Expires")).sort((a, b) => (validity(a).days ?? 0) - (validity(b).days ?? 0));
-  const licences = docs.filter((d) => d.kind === "Mining Licence");
+  const licences = siteDocs.filter((d) => d.kind === "Mining Licence");
 
   const download = (d: Doc) => {
     downloadFile(
@@ -67,13 +77,19 @@ export default function DocumentsPage() {
     <>
       <PageHeader
         title="Documents & Licences"
-        subtitle="Keep mining licences, permits and certificates valid and in one place."
-        actions={<PrimaryButton icon={IconUpload} onClick={() => setOpen(true)}>Upload Document</PrimaryButton>}
+        subtitle="Company-wide papers: tax, registration, export and transport permits, certificates. Each site keeps its own licence and papers on its site page."
+        actions={<PrimaryButton icon={IconUpload} onClick={() => openForm("document")}>Upload Document</PrimaryButton>}
       />
+      {search && (
+        <p className="pl-2 text-sm">
+          Showing results for “{search}” ·{" "}
+          <button onClick={() => setSearch("")} className="font-medium text-accent hover:underline">Clear</button>
+        </p>
+      )}
 
-      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
-        <StatCard icon={IconFileText} tone="orange" label="Total Documents" value={docs.length} delta="+2" spark={[3, 3.5, 4, 4.2, 5, 5.5, 7]} />
-        <StatCard icon={IconCertificate} tone="green" label="Mining Licences" value={licences.length} delta="+1" spark={[3, 3, 3.5, 3.5, 4, 4, 5]} />
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={IconFileText} tone="orange" label="General Documents" value={docs.length} delta="company-wide" deltaDir="none" note="" spark={[3, 3.5, 4, 4.2, 5, 5.5, 7]} />
+        <StatCard icon={IconCertificate} tone="green" label="Site licences" value={licences.length} delta="on site pages" deltaDir="none" note="" spark={[3, 3, 3.5, 3.5, 4, 4, 5]} />
         <StatCard icon={IconCalendarDue} tone="orange" label="Expiring Soon" value={expiring.length} delta="next 60 days" deltaDir="none" deltaClass="text-accent" note="" spark={[3, 4, 3, 5, 4, 6, 7]} />
         <StatCard icon={IconAlertTriangle} tone="violet" label="Expired" value={docs.filter((d) => validity(d).label === "Expired").length} delta="needs renewal" deltaDir="none" deltaClass="text-danger" note="" spark={[3, 3, 3, 3.5, 3, 3.2, 3]} />
       </div>
@@ -93,7 +109,7 @@ export default function DocumentsPage() {
 
       <Card className="pt-6">
         <div className="flex flex-wrap items-center justify-between gap-3 px-6">
-          <CardTitle icon={IconFileText}>All Documents</CardTitle>
+          <CardTitle icon={IconFileText}>General Documents</CardTitle>
           <div className="flex gap-2">
             <FilterSelect label="All types" options={[...new Set(docs.map((d) => d.kind))]} value={kind} onChange={setKind} />
             <FilterSelect label="Any validity" options={["Valid", "Expiring soon", "Expired", "No expiry"]} value={valid} onChange={setValid} />
@@ -103,9 +119,9 @@ export default function DocumentsPage() {
           {page.length === 0 ? (
             <Empty>No documents match these filters.</Empty>
           ) : (
-            <table className="w-full text-left text-[15px] [&_td]:whitespace-nowrap">
+            <table className="w-full text-left text-[15px]">
               <thead className="bg-head">
-                <tr>{["Document", "Type", "Reference", "Site", "Issued", "Expires", "Validity", ""].map((h, i) => <th key={i} className="px-4 py-3.5 text-[13px] font-medium">{h}</th>)}</tr>
+                <tr>{["Document", "Type", "Reference", "Issued", "Expires", "Validity", ""].map((h, i) => <th key={i} className="px-4 py-3.5 text-[13px] font-medium">{h}</th>)}</tr>
               </thead>
               <tbody>
                 {page.map((d) => {
@@ -120,7 +136,6 @@ export default function DocumentsPage() {
                       </td>
                       <td className="px-4">{d.kind}</td>
                       <td className="px-4">{d.number}</td>
-                      <td className="px-4">{d.siteId ? <Link href={`/miner/mining-sites/${d.siteId}`} className="hover:text-[#1F5B3A] hover:underline">{siteName(state, d.siteId)}</Link> : "—"}</td>
                       <td className="px-4 text-ink/70">{d.issued}</td>
                       <td className="px-4 text-ink/70">{d.expires ?? "—"}</td>
                       <td className="px-4"><StatusBadge tone={v.tone}>{v.label}</StatusBadge></td>
@@ -142,11 +157,13 @@ export default function DocumentsPage() {
                                 label: "Delete",
                                 icon: IconTrash,
                                 danger: true,
-                                onClick: () => {
-                                  if (!confirm(`Delete "${d.name}"? This cannot be undone.`)) return;
-                                  update((s) => ({ docs: s.docs.filter((x) => x.id !== d.id) }));
-                                  toast(`${d.name} deleted`, "info");
-                                },
+                                onClick: withConfirm(
+                                  { title: "Delete document?", message: <>“{d.name}” will be removed. This cannot be undone.</>, confirmLabel: "Delete", tone: "danger" },
+                                  () => {
+                                    update((s) => ({ docs: s.docs.filter((x) => x.id !== d.id) }));
+                                    toast(`${d.name} deleted`, "info");
+                                  },
+                                ),
                               },
                             ]}
                           />
@@ -162,7 +179,18 @@ export default function DocumentsPage() {
         <Pagination {...pager} noun="documents" />
       </Card>
 
-      {open && <UploadDocModal onClose={() => setOpen(false)} />}
+      <Card className="p-6">
+        <CardTitle icon={IconCertificate}>Site documents</CardTitle>
+        <p className="mt-1 text-sm text-ink/70">Licences, environmental assessments and other papers of one site are kept on that site&apos;s page.</p>
+        <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
+          {state.sites.map((s) => (
+            <Link key={s.id} href={`/miner/mining-sites/${s.id}?tab=documents`} className="flex items-center justify-between rounded-xl bg-page px-3 py-2.5 hover:bg-primary-soft">
+              <span>{s.name}</span>
+              <span className="text-ink/60">{siteDocs.filter((d) => d.siteId === s.id).length} files →</span>
+            </Link>
+          ))}
+        </div>
+      </Card>
     </>
   );
 }

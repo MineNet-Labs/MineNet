@@ -179,10 +179,9 @@ export function PrimaryButton({
   icon?: TablerIcon;
   tone?: "green" | "orange";
 }) {
-  const bg =
-    tone === "green"
-      ? "bg-[#1F5B3A] hover:bg-primary shadow-[0_6px_16px_rgba(31,91,58,0.25)]"
-      : "bg-[#C9561A] hover:bg-accent-deep shadow-[0_6px_16px_rgba(201,86,26,0.25)]";
+  // One approved green for every primary action (tone kept for old call sites).
+  void tone;
+  const bg = "bg-[#1F5B3A] hover:bg-primary shadow-[0_6px_16px_rgba(31,91,58,0.25)]";
   return (
     <button
       className={`inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-[15px] font-medium whitespace-nowrap text-white transition-colors ${bg} ${className}`}
@@ -208,7 +207,7 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-6 pl-2">
+    <div className="flex flex-col gap-4 pl-2 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
       <div>
         {crumb && (
           <p className="mb-1 flex items-center gap-2 text-[17px] font-medium text-accent">
@@ -220,7 +219,7 @@ export function PageHeader({
         <p className="mt-2 text-[17px] text-ink/80">{subtitle}</p>
         <span className="mt-2 block h-[3px] w-16 rounded-full bg-accent" />
       </div>
-      {actions && <div className="flex flex-col items-end gap-4 sm:flex-row sm:items-center">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-start gap-3 sm:flex-col sm:items-end sm:gap-4 md:flex-row md:items-center">{actions}</div>}
     </div>
   );
 }

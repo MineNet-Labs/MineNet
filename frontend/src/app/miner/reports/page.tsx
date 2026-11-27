@@ -105,14 +105,14 @@ export default function ReportsPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={IconChartBar} tone="orange" label="Total Reports" value="48" delta="+12%" deltaDir="none" note="this period" spark={[3, 3.5, 3.2, 4, 3.8, 5, 8]} />
         <StatCard icon={IconCheck} tone="green" label="Completed" value="42" delta="+8%" deltaDir="none" note="this period" spark={[3, 4, 4.5, 4, 5, 4.5, 8]} />
         <StatCard icon={IconClock} tone="orange" label="Pending" value="6" delta="-25%" deltaDir="none" deltaClass="text-danger" note="this period" spark={[3, 3.5, 3.2, 5, 4.2, 5, 8]} />
         <StatCard icon={IconFileText} tone="gray" label="Scheduled" value="3" delta="+1" deltaDir="none" deltaClass="text-ink" note="this period" spark={[3, 4.5, 4, 6, 5.5, 7, 8]} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_402px]">
+      <div className="grid items-start gap-5 xl:grid-cols-[1fr_402px]">
         <Card className="p-6">
           <CardTitle
             icon={IconChartBar}
@@ -179,7 +179,7 @@ export default function ReportsPage() {
           Recent Reports
         </CardTitle>
         <div className="overflow-x-auto">
-          <table className="mt-5 w-full text-left text-base [&_td]:whitespace-nowrap">
+          <table className="mt-5 w-full text-left text-base">
             <thead className="bg-head text-ink/80">
               <tr>
                 {["Report Name", "Type", "Period", "Generated On", "Status"].map((h) => <th key={h} className="px-4 py-3 font-normal">{h}</th>)}
@@ -234,7 +234,7 @@ export default function ReportsPage() {
         <div className="mt-4"><SupplyChainSankey /></div>
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid items-start gap-5 xl:grid-cols-2">
         <Card className="p-6">
           <CardTitle icon={IconGauge}>Compliance Health</CardTitle>
           <ComplianceGauges items={[{ label: "Lots verified", value: 89, color: "#1F5B3A" }, { label: "Inspection pass rate", value: 84, color: "#4F8A66" }, { label: "Licences valid", value: 93, color: "#E8792B" }]} />
@@ -252,7 +252,7 @@ export default function ReportsPage() {
 
       {preview && (
         <Modal title={preview.name} subtitle={`${preview.id} · ${preview.period}`} onClose={() => setPreview(null)} width={720}>
-          <pre className="max-h-[50vh] overflow-auto rounded-xl bg-page p-4 text-xs leading-relaxed whitespace-pre-wrap">{reportText(preview)}</pre>
+          <pre className="rounded-xl bg-page p-4 text-xs leading-relaxed whitespace-pre-wrap">{reportText(preview)}</pre>
         </Modal>
       )}
     </>

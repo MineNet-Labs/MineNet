@@ -1,7 +1,11 @@
 "use client";
 
+import { openForm } from "@/components/FormHost";
+
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { confirmAction } from "@/components/ui/Confirm";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { IconCalendarTime, IconCircleCheck, IconClipboardCheck, IconDownload, IconEye, IconHourglass, IconPlus, IconShieldCheck, IconX } from "@tabler/icons-react";
 import {
   Card,
@@ -23,8 +27,6 @@ import { Tabs } from "@/components/ui/Tabs";
 import type { Inspection, InspectionStatus } from "@/lib/data";
 import { siteName, update, useStore } from "@/lib/store";
 import { downloadFile } from "@/lib/csv";
-import { useQueryParam } from "@/lib/useQueryParam";
-import { RequestInspectionModal } from "./RequestInspectionModal";
 
 const tone: Record<InspectionStatus, BadgeTone> = {
   Pending: "pending",
@@ -36,15 +38,14 @@ const tone: Record<InspectionStatus, BadgeTone> = {
 const tabs = ["All Requests", "Pending", "Scheduled", "In Progress", "Completed", "Rejected"];
 
 export default function InspectionsPage() {
+  const router = useRouter();
   const state = useStore((s) => s);
   const { inspections } = state;
   const [tab, setTab] = useState("All Requests");
   const [mineral, setMineral] = useState("");
   const [site, setSite] = useState("");
   const [type, setType] = useState("");
-  const [open, setOpen] = useState(false);
   const [view, setView] = useState<Inspection | null>(null);
-  useQueryParam("new", useCallback(() => setOpen(true), []));
 
   const rows = useMemo(
     () =>
@@ -60,7 +61,8 @@ export default function InspectionsPage() {
   const { rows: page, pager } = usePaged(rows, 6);
   const count = (t: string) => (t === "All Requests" ? inspections.length : inspections.filter((r) => r.status === t).length);
 
-  const cancel = (r: Inspection) => {
+  const cancel = async (r: Inspection) => {
+    if (!(await confirmAction({ title: "Cancel inspection request?", message: `${r.id} for ${r.lotId} will be cancelled.`, confirmLabel: "Cancel request", tone: "danger" }))) return;
     update((s) => ({ inspections: s.inspections.filter((x) => x.id !== r.id) }));
     toast(`Request ${r.id} cancelled`, "info");
   };
@@ -78,7 +80,7 @@ export default function InspectionsPage() {
       <PageHeader
         title="Inspections"
         subtitle="Request mineral inspections, follow their progress and access official results and certificates."
-        actions={<PrimaryButton icon={IconPlus} className="rounded-full py-3.5" onClick={() => setOpen(true)}>Request Inspection</PrimaryButton>}
+        actions={<PrimaryButton icon={IconPlus} className="rounded-full py-3.5" onClick={() => openForm("inspection")}>Request Inspection</PrimaryButton>}
       />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -106,7 +108,7 @@ export default function InspectionsPage() {
           {page.length === 0 ? (
             <Empty>No inspection requests match these filters.</Empty>
           ) : (
-            <table className="w-full min-w-[1100px] text-left text-sm [&_td]:whitespace-nowrap">
+            <table className="w-full text-left text-sm">
               <thead className="bg-head">
                 <tr>
                   {["Request ID", "Mineral Lot", "Mining Site", "Mine Shaft", "Submitted", "Inspection Type", "Assigned Inspector", "Status", ""].map((h, i) => (
@@ -117,8 +119,8 @@ export default function InspectionsPage() {
               <tbody>
                 {page.map((r) => (
                   <tr key={r.id} className="border-b border-gray-100">
-                    <td className="px-4 py-4 font-semibold">{r.id}</td>
-                    <td className="px-4"><p>{r.lotId}</p><p className="text-xs text-ink/60">{r.mineral}</p></td>
+                    <td className="px-4 py-4 font-semibold"><Link href={`/miner/inspections/${r.id}`} className="hover:text-[#1F5B3A] hover:underline">{r.id}</Link></td>
+                    <td className="px-4"><p><Link href={`/miner/mineral-lots/${r.lotId}`} className="hover:underline">{r.lotId}</Link></p><p className="text-xs text-ink/60">{r.mineral}</p></td>
                     <td className="px-4"><Link href={`/miner/mining-sites/${r.siteId}`} className="hover:text-[#1F5B3A] hover:underline">{siteName(state, r.siteId)}</Link></td>
                     <td className="px-4">{r.shaft}</td>
                     <td className="px-4">{r.submitted}</td>
@@ -130,7 +132,7 @@ export default function InspectionsPage() {
                     <td className="px-4 text-right">
                       <RowMenu
                         items={[
-                          { label: "View details", icon: IconEye, onClick: () => setView(r) },
+                          { label: "View details", icon: IconEye, onClick: () => router.push(`/miner/inspections/${r.id}`) },
                           ...(r.status === "Completed" ? [{ label: "Download certificate", icon: IconDownload, onClick: () => certificate(r) }] : []),
                           ...(r.status === "Pending" ? [{ label: "Cancel request", icon: IconX, danger: true, onClick: () => cancel(r) }] : []),
                         ]}
@@ -145,7 +147,6 @@ export default function InspectionsPage() {
         <Pagination {...pager} noun="requests" />
       </Card>
 
-      {open && <RequestInspectionModal onClose={() => setOpen(false)} />}
       {view && (
         <Modal title={`Inspection ${view.id}`} subtitle={view.type} onClose={() => setView(null)}>
           <dl className="grid grid-cols-2 gap-4 text-sm">
