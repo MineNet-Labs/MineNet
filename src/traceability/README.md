@@ -25,6 +25,22 @@ registerLot (Active site) ─▶ Registered ─▶ inspection ─▶ Inspected �
 - **Ownership vs custody.** Ownership moves by ERC-721 transfer (inspected, unfrozen lots, to accounts allowed to
   own lots). Custody moves only when the sender initiates and the receiver confirms, directly on the passport or
   through a `DeliveryManager` shipment.
+- **Production cap.** `registerLot` draws the lot's quantity from the site's recorded extraction
+  (`MineSiteRegistry.recordExtraction`), so a site can never lot more than it reported producing.
+- **Declared vs attested grade.** The owner can declare a new lot's grade once, before inspection
+  (`SupplyChain.declareGrade`); an attested grade more than `gradeDiscrepancyBps` (default 3 points) away emits
+  `GradeDiscrepancy`.
+- **Splitting a batch.** `SupplyChain.splitLot` cuts an inspected lot by trusted weight into smaller lots that
+  stay inspected, keep the owner, custodian, site, grade and customs status, get proportional baselines, and are
+  covered by the parent's certificates (`CertificateRegistry.splitParentOf`). The parent is consumed and linked
+  as the children's parent. The Marketplace splits automatically when a lot is bigger than what is left of a
+  buy request.
+- **Site dispatch.** `DeliveryManager.dispatch` books a shipment with the vehicle plate, the driver (hashed id),
+  the receiving worker at the verified consignee (hashed id, which the consignee can change with `setReceiver`) and the
+  weight handed over per lot. The custodian or the company's site manager (`DISPATCH_LOTS` at the lots' site)
+  signs it; the carrier then weighs the lots at pickup.
+- **Liens.** `LotFinance` records `Lien`, `LienReleased` and `Insured` events through `recordFinancing`. A pledged
+  lot cannot be transferred or processed, and only the escrow may lock it (a sale that repays the financier).
 - **Flags freeze lots.** Any open flag or regulatory hold freezes the lot: it cannot be sold, moved or processed
   until a regulator resolves the flag.
 - **History is append-only.** A correction is a new event pointing to the one it corrects; nothing is overwritten.

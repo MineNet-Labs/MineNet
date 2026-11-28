@@ -11,6 +11,7 @@ import {ILotPassport} from "src/traceability/interfaces/ILotPassport.sol";
 import {ICertificateRegistry} from "src/compliance/interfaces/ICertificateRegistry.sol";
 import {ISupplyChain} from "src/traceability/interfaces/ISupplyChain.sol";
 import {ICurrencyManager} from "src/finance/interfaces/ICurrencyManager.sol";
+import {ILotFinance} from "src/finance/interfaces/ILotFinance.sol";
 import {Actions} from "src/access/libraries/Actions.sol";
 import {EscrowLib} from "src/trade/libraries/EscrowLib.sol";
 import {DisputeLib} from "src/trade/libraries/DisputeLib.sol";
@@ -314,6 +315,11 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
             revert EscrowLib.EscrowManager__SellerNotOwner(p.tokenId, p.seller);
         }
         if (!_certificatesValid(p.tokenId)) revert EscrowLib.EscrowManager__MissingCertificates(p.tokenId);
+        address financing = passport.financing();
+        if (financing != address(0)) {
+            // a lot under a lien sells only in the loan's token and for enough to repay the financier
+            ILotFinance(financing).checkSale(p.tokenId, p.paymentToken, p.amount - (p.amount * feeBps) / 10_000);
+        }
 
         orderId = _nextOrderId++;
         uint64 deadline = uint64(block.timestamp) + p.deliveryWindow;
@@ -811,7 +817,9 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
     }
 
     /**
-     * @dev Pays out an order: `buyerRefund` to the buyer, the rest to the seller minus the fee. The lot either
+     * @dev Pays out an order: `buyerRefund` to the buyer, the rest to the seller minus the fee. When the lot goes
+     * to the buyer and is collateral for a loan ({LotFinance}), the financier is paid first from the seller's share
+     * and the lien is released. The lot either
      * moves
      * to the buyer or is unlocked and stays with the seller. After a dispute verdict a frozen lot keeps its lock
      * and
@@ -831,6 +839,19 @@ contract EscrowManager is ReentrancyGuardTransient, Pausable, IEscrowManager {
         uint256 sellerGross = o.amount - buyerRefund;
         uint256 fee = (sellerGross * o.feeBps) / 10_000;
         sellerAmount = sellerGross - fee;
+        if (lotToBuyer) {
+            // a lot under a lien: the financier is paid first from the seller's proceeds and the lien released,
+            // so the title can pass
+            address financing = passport.financing();
+            if (financing != address(0)) {
+                (address lender, uint256 repaid) =
+                    ILotFinance(financing).repayFromSale(o.tokenId, o.paymentToken, sellerAmount);
+                if (repaid != 0) {
+                    claimable[o.paymentToken][lender] += repaid;
+                    sellerAmount -= repaid;
+                }
+            }
+        }
         if (buyerRefund != 0) claimable[o.paymentToken][registry.payoutOf(o.buyer)] += buyerRefund;
         if (sellerAmount != 0) claimable[o.paymentToken][registry.payoutOf(o.seller)] += sellerAmount;
         if (fee != 0) claimable[o.paymentToken][treasury] += fee;

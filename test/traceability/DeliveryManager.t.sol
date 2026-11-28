@@ -108,7 +108,7 @@ contract DeliveryManagerTest is MineNetFixture {
 
         // regulator investigates: the scale was mis-calibrated. Clear the flag and continue.
         vm.startPrank(regulator);
-        passport.resolveFlag(passport.getEvent(b, passport.eventCount(b) - 1).corrects, false, H);
+        passport.resolveFlag(passport.getEvents(b, passport.eventCount(b) - 1, 1)[0].corrects, false, H);
         delivery.resolveHold(sid, false, H);
         vm.stopPrank();
 
@@ -128,7 +128,7 @@ contract DeliveryManagerTest is MineNetFixture {
         // investigation: drying loss confirmed. Accept 1_800 g as the true weight.
         vm.startPrank(regulator);
         supplyChain.rebaseline(b, 1_800, keccak256("moisture-report"));
-        passport.resolveFlag(passport.getEvent(b, passport.eventCount(b) - 1).corrects, false, H);
+        passport.resolveFlag(passport.getEvents(b, passport.eventCount(b) - 1, 1)[0].corrects, false, H);
         delivery.resolveHold(sid, false, H);
         vm.stopPrank();
 

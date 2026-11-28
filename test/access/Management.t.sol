@@ -56,23 +56,23 @@ contract ManagementTest is MineNetFixture {
     }
 
     function test_NewRole_CanBeAddedAndMapped() public {
-        bytes32 insurer = keccak256("INSURER_ROLE");
-        address axa = makeAddr("insurer");
+        bytes32 lab = keccak256("ASSAY_LAB_ROLE"); // a role the platform does not ship with
+        address axa = makeAddr("assay-lab");
         vm.startPrank(admin);
-        vm.expectRevert(abi.encodeWithSelector(RegistryLib.MineNetRegistry__UnknownRole.selector, insurer));
-        registry.onboard(axa, insurer, "org-insurer", H, 0);
+        vm.expectRevert(abi.encodeWithSelector(RegistryLib.MineNetRegistry__UnknownRole.selector, lab));
+        registry.onboard(axa, lab, "org-lab", H, 0);
 
-        registry.setParticipantRole(insurer, true);
-        registry.onboard(axa, insurer, "org-insurer", H, 0);
+        registry.setParticipantRole(lab, true);
+        registry.onboard(axa, lab, "org-lab", H, 0);
         bytes32[] memory roles = new bytes32[](2);
         roles[0] = Roles.AUDITOR;
-        roles[1] = insurer;
+        roles[1] = lab;
         registry.setActionRoles(Actions.AUDIT, roles);
         vm.stopPrank();
         assertTrue(registry.isAuthorized(axa, Actions.AUDIT));
 
         vm.prank(admin); // retiring the role removes every permission at once
-        registry.setParticipantRole(insurer, false);
+        registry.setParticipantRole(lab, false);
         assertFalse(registry.isAuthorized(axa, Actions.AUDIT));
     }
 

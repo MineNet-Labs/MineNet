@@ -8,6 +8,9 @@ import {IMineNetRegistry} from "src/access/interfaces/IMineNetRegistry.sol";
 import {ICurrencyManager} from "src/finance/interfaces/ICurrencyManager.sol";
 import {ISiteRegistry} from "src/compliance/interfaces/ISiteRegistry.sol";
 import {IStaffDirectory} from "src/workforce/interfaces/IStaffDirectory.sol";
+import {IWorkforce} from "src/workforce/interfaces/IWorkforce.sol";
+import {IAttendanceGate} from "src/workforce/interfaces/IAttendanceGate.sol";
+import {SiteLib} from "src/compliance/libraries/SiteLib.sol";
 import {Actions} from "src/access/libraries/Actions.sol";
 import {WorkforceLib} from "src/workforce/libraries/WorkforceLib.sol";
 import {StaffLib} from "src/workforce/libraries/StaffLib.sol";
@@ -42,8 +45,13 @@ import {StaffLib} from "src/workforce/libraries/StaffLib.sol";
  * permissions and scope: e.g. a `SUPERVISOR` records attendance at their site, a `PAYROLL_OFFICER` records and
  * pays wages. Staff can never assign roles, change a role holder, or pay or record payments to themselves.
  * Other contracts ({MineSiteRegistry}) check staff permissions through {staffOrg}.
+ *
+ * Site seats: the company account appoints one site manager, one site HR and one report inspector per site
+ * ({appointSiteSeat}), and can remove or replace them at any time. A seat holder gets the company's
+ * `SITE_MANAGER` / `SITE_HR` / `SITE_INSPECTOR` permissions at that site. Staff cannot change a seat holder's record. {SiteOperations} runs the manager's
+ * reports and HR's hiring; it onboards approved hires and books the salaries it pays through the hooks below.
  */
-contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
+contract WorkforceManager is ReentrancyGuardTransient, IWorkforce {
     using SafeERC20 for IERC20;
 
     /**
@@ -122,6 +130,27 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
     mapping(bytes32 orgId => bytes32[]) private _definedRoles;
 
     /**
+     * @notice The {SiteOperations} contract allowed to onboard hires and book site payroll (zero = none).
+     */
+    address public siteOperations;
+
+    /**
+     * @notice The {PayrollEngine}: it gates each check-in (rest days, leave, fatigue lock) and books the salaries it
+     * pays (zero = none).
+     */
+    address public payrollEngine;
+
+    /**
+     * @dev Site => its appointed manager and HR.
+     */
+    mapping(uint256 siteId => StaffLib.SiteTeam) private _siteTeams;
+
+    /**
+     * @notice Number of site seats a worker holds (seat holders are protected from staff changes).
+     */
+    mapping(bytes32 workerId => uint256) public seatsHeld;
+
+    /**
      * @dev Next payment id; ids start at 1 so that 0 means "none".
      */
     uint256 private _nextPaymentId = 1;
@@ -159,13 +188,35 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
      * @custom:emits CashPolicySet
      */
     function setCashPolicy(uint256 cashLimitUsd_, uint32 ackWindow_) external {
-        if (!registry.isAdmin(msg.sender)) {
-            revert WorkforceLib.WorkforceManager__NotRegistryAdmin(msg.sender);
-        }
+        _onlyAdmin();
         if (ackWindow_ == 0) revert WorkforceLib.WorkforceManager__InvalidPolicy();
         cashLimitUsd = cashLimitUsd_;
         ackWindow = ackWindow_;
         emit WorkforceLib.CashPolicySet(cashLimitUsd_, ackWindow_);
+    }
+
+    /**
+     * @notice Sets the {SiteOperations} contract that onboards approved hires and books site payroll.
+     * @dev Only a {MineNetRegistry} admin. Zero disables the hooks.
+     * @param siteOperations_ The contract, or zero.
+     * @custom:emits SiteOperationsSet
+     */
+    function setSiteOperations(address siteOperations_) external {
+        _onlyAdmin();
+        siteOperations = siteOperations_;
+        emit WorkforceLib.SiteOperationsSet(siteOperations_);
+    }
+
+    /**
+     * @notice Sets the {PayrollEngine} that gates check-ins and books the salaries it pays.
+     * @dev Only a {MineNetRegistry} admin. Zero disables both.
+     * @param engine The engine, or zero.
+     * @custom:emits PayrollEngineSet
+     */
+    function setPayrollEngine(address engine) external {
+        _onlyAdmin();
+        payrollEngine = engine;
+        emit WorkforceLib.PayrollEngineSet(engine);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -309,6 +360,128 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
         emit StaffLib.RoleAssigned(workerId, roleId, allSites, msg.sender);
     }
 
+    /**
+     * @notice Appoints a site's manager, HR or report inspector, replaces the current holder, or removes them (zero
+     * `workerId`).
+     * @dev Only the site's company account. The holder must be an active worker of the company with a wallet,
+     * and cannot hold another seat of the same site. Removing or replacing takes effect at once.
+     * @param siteId One of the company's sites, not closed.
+     * @param seat Manager, HR or inspector.
+     * @param workerId New holder, or zero to leave the seat vacant.
+     * @custom:emits SiteSeatAssigned
+     */
+    function appointSiteSeat(uint256 siteId, StaffLib.SiteSeat seat, bytes32 workerId) external {
+        bytes32 orgId = _companyOrg();
+        if (siteId == 0 || sites.orgOfSite(siteId) != orgId) {
+            revert WorkforceLib.WorkforceManager__SiteNotOfOrg(siteId);
+        }
+        StaffLib.SiteTeam storage t = _siteTeams[siteId];
+        bytes32 previous = _seatHolder(t, seat);
+        if (workerId != bytes32(0)) {
+            if (sites.getSite(siteId).status == SiteLib.SiteStatus.Closed) {
+                revert WorkforceLib.WorkforceManager__SiteNotOfOrg(siteId);
+            }
+            WorkforceLib.Worker storage w = _workers[workerId];
+            if (w.orgId != orgId) revert WorkforceLib.WorkforceManager__NotYourWorker(workerId);
+            if (!w.active || w.wallet == address(0)) revert StaffLib.WorkforceManager__CannotHoldSeat(workerId);
+            if (workerId != previous && (t.manager == workerId || t.hr == workerId || t.inspector == workerId)) {
+                revert StaffLib.WorkforceManager__SeatConflict(siteId, workerId);
+            }
+            seatsHeld[workerId] += 1;
+        }
+        if (previous != bytes32(0)) seatsHeld[previous] -= 1;
+        if (seat == StaffLib.SiteSeat.Manager) t.manager = workerId;
+        else if (seat == StaffLib.SiteSeat.Hr) t.hr = workerId;
+        else t.inspector = workerId;
+        emit StaffLib.SiteSeatAssigned(siteId, seat, workerId, previous, msg.sender);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         SITE OPERATIONS HOOKS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @inheritdoc IWorkforce
+     * @custom:emits WorkerRegistered (new worker)
+     * @custom:emits WorkerStatusChanged, WorkerAssigned (returning worker)
+     */
+    function onboardWorker(bytes32 orgId, bytes32 workerId, address wallet, uint256 siteId) external {
+        _onlySiteOperations();
+        if (workerId == bytes32(0)) revert WorkforceLib.WorkforceManager__InvalidWorkerId();
+        if (siteId == 0) revert WorkforceLib.WorkforceManager__SiteNotOfOrg(siteId);
+        _requireOrgSite(orgId, siteId);
+        WorkforceLib.Worker storage w = _workers[workerId];
+        if (w.orgId == bytes32(0)) {
+            _bindWallet(workerId, wallet);
+            _workers[workerId] = WorkforceLib.Worker({
+                orgId: orgId,
+                wallet: wallet,
+                siteId: siteId,
+                registeredAt: uint64(block.timestamp),
+                lastAttendanceDay: 0,
+                daysWorked: 0,
+                active: true
+            });
+            _workersOf[orgId].push(workerId);
+            emit WorkforceLib.WorkerRegistered(workerId, orgId, wallet, siteId);
+            return;
+        }
+        if (w.orgId != orgId) revert WorkforceLib.WorkforceManager__NotYourWorker(workerId);
+        if (!w.active) {
+            w.active = true;
+            emit WorkforceLib.WorkerStatusChanged(workerId, true);
+        }
+        if (w.siteId != siteId) {
+            emit WorkforceLib.WorkerAssigned(workerId, w.siteId, siteId);
+            w.siteId = siteId;
+        }
+    }
+
+    /**
+     * @inheritdoc IWorkforce
+     * @custom:emits WorkerStatusChanged
+     */
+    function offboardWorker(bytes32 workerId) external {
+        _onlySiteOperations();
+        WorkforceLib.Worker storage w = _workers[workerId];
+        if (w.orgId == bytes32(0)) revert WorkforceLib.WorkforceManager__UnknownWorker(workerId);
+        if (!w.active) return;
+        w.active = false;
+        emit WorkforceLib.WorkerStatusChanged(workerId, false);
+    }
+
+    /**
+     * @inheritdoc IWorkforce
+     * @custom:emits PaymentRecorded
+     */
+    function recordSiteSalary(bytes32 orgId, bytes32 workerId, IERC20 token, uint256 amount, bytes32 paymentRef)
+        external
+        returns (uint256 paymentId, address wallet)
+    {
+        _onlyPayrollEngine();
+        if (amount == 0) revert WorkforceLib.WorkforceManager__InvalidAmount();
+        bytes32 currency = currencies.currencyOf(token);
+        WorkforceLib.Worker storage w = _workers[workerId];
+        if (w.orgId != orgId) revert WorkforceLib.WorkforceManager__NotYourWorker(workerId);
+        wallet = w.wallet; // may be inactive: arrears of an ended employment are still paid
+        if (wallet == address(0)) revert WorkforceLib.WorkforceManager__NoWallet(workerId);
+        uint256 usdValue;
+        try currencies.tokenToUsd(token, amount) returns (uint256 v) {
+            usdValue = v;
+        } catch {}
+        WorkforceLib.PaymentInput memory p = WorkforceLib.PaymentInput({
+            payeeId: workerId,
+            payeeWallet: wallet,
+            category: WorkforceLib.PaymentCategory.Salary,
+            method: WorkforceLib.PaymentMethod.Stablecoin,
+            currency: currency,
+            amount: amount,
+            paymentRef: paymentRef,
+            receiptHash: bytes32(0)
+        });
+        paymentId = _record(orgId, p, wallet, currency, usdValue);
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 ATTENDANCE
     //////////////////////////////////////////////////////////////*/
@@ -316,7 +489,9 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
     /**
      * @notice Records that workers were present at a site on a day.
      * @dev The site's company account, its staff with `RECORD_ATTENDANCE` there, or an attendance device
-     * (`REPORT_READING`) independent of the company (not one of its own accounts). Workers already marked for that day are skipped, so a retried submission is harmless.
+     * (`REPORT_READING`) independent of the company (not one of its own accounts). Each new check-in must pass
+     * the {payrollEngine} gate (no routine check-in on a rest day, holiday or leave day, or a 7th day in a row,
+     * without authorised overtime). Workers already marked for that day are skipped, so a retried submission is harmless.
      * @param siteId Site; every worker must be active and assigned to it.
      * @param day Day number (unix time / 1 day); not in the future and at most {MAX_ATTENDANCE_BACKDATE} days back.
      * @param workerIds Workers present.
@@ -332,6 +507,7 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
         if (day > today || day + MAX_ATTENDANCE_BACKDATE < today) {
             revert WorkforceLib.WorkforceManager__InvalidDay(day);
         }
+        address gate = payrollEngine;
 
         for (uint256 i; i < workerIds.length; ++i) {
             bytes32 workerId = workerIds[i];
@@ -341,6 +517,7 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
             }
             if (!w.active) revert WorkforceLib.WorkforceManager__WorkerInactive(workerId);
             if (attendedOn[workerId][day]) continue;
+            if (gate != address(0)) IAttendanceGate(gate).checkAttendance(workerId, siteId, day);
             attendedOn[workerId][day] = true;
             w.daysWorked += 1;
             if (day > w.lastAttendanceDay) w.lastAttendanceDay = day;
@@ -482,7 +659,7 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
      * @param workerId Worker id.
      * @return The worker (zero organisation if unknown).
      */
-    function getWorker(bytes32 workerId) external view returns (WorkforceLib.Worker memory) {
+    function getWorker(bytes32 workerId) external view override returns (WorkforceLib.Worker memory) {
         return _workers[workerId];
     }
 
@@ -525,17 +702,48 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
     }
 
     /**
+     * @notice Returns a site's appointed manager and HR.
+     * @param siteId Site.
+     * @return The team (zero worker ids for vacant seats).
+     */
+    function siteTeam(uint256 siteId) external view returns (StaffLib.SiteTeam memory) {
+        return _siteTeams[siteId];
+    }
+
+    /**
      * @inheritdoc IStaffDirectory
+     * @dev Permissions come from the worker's own role (within its scope) plus, at a site where the worker holds
+     * a seat, the company's `SITE_MANAGER` or `SITE_HR` permissions.
      */
     function staffOrg(address account, uint256 siteId, uint32 permission) public view returns (bytes32) {
         bytes32 workerId = workerOfWallet[account];
-        if (workerId == bytes32(0)) return bytes32(0);
+        if (workerId == bytes32(0) || permission == 0) return bytes32(0);
         WorkforceLib.Worker storage w = _workers[workerId];
+        if (!w.active) return bytes32(0);
+        bytes32 orgId = w.orgId;
+        uint32 perms;
         StaffLib.StaffRole storage r = _staff[workerId];
-        if (!w.active || r.roleId == bytes32(0)) return bytes32(0);
-        if (permission == 0 || rolePermissions(w.orgId, r.roleId) & permission != permission) return bytes32(0);
-        if (!r.allSites && (siteId == 0 || siteId != w.siteId)) return bytes32(0);
-        return w.orgId;
+        if (r.roleId != bytes32(0) && (r.allSites || (siteId != 0 && siteId == w.siteId))) {
+            perms = rolePermissions(orgId, r.roleId);
+        }
+        if (siteId != 0 && seatsHeld[workerId] != 0) {
+            StaffLib.SiteTeam storage t = _siteTeams[siteId];
+            if (t.manager == workerId) perms |= rolePermissions(orgId, StaffLib.SITE_MANAGER);
+            else if (t.hr == workerId) perms |= rolePermissions(orgId, StaffLib.SITE_HR);
+            else if (t.inspector == workerId) perms |= rolePermissions(orgId, StaffLib.SITE_INSPECTOR);
+        }
+        return perms & permission == permission ? orgId : bytes32(0);
+    }
+
+    /**
+     * @inheritdoc IWorkforce
+     */
+    function attendanceMask(bytes32 workerId, uint64 fromDay, uint256 days_) external view returns (uint256 mask) {
+        if (days_ > 256) revert WorkforceLib.WorkforceManager__InvalidDay(fromDay);
+        mapping(uint64 day => bool) storage att = attendedOn[workerId];
+        for (uint256 i; i < days_; ++i) {
+            if (att[fromDay + uint64(i)]) mask |= 1 << i;
+        }
     }
 
     /**
@@ -720,7 +928,7 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
         (orgId, actorWorker) = _actor(StaffLib.MANAGE_WORKERS, w.siteId);
         if (w.orgId != orgId) revert WorkforceLib.WorkforceManager__NotYourWorker(workerId);
         byStaff = actorWorker != bytes32(0);
-        if (byStaff && (actorWorker == workerId || _staff[workerId].roleId != bytes32(0))) {
+        if (byStaff && (actorWorker == workerId || _staff[workerId].roleId != bytes32(0) || seatsHeld[workerId] != 0)) {
             revert StaffLib.WorkforceManager__ProtectedWorker(workerId);
         }
     }
@@ -806,6 +1014,43 @@ contract WorkforceManager is ReentrancyGuardTransient, IStaffDirectory {
     function _requireOrgSite(bytes32 orgId, uint256 siteId) private view {
         if (siteId != 0 && sites.orgOfSite(siteId) != orgId) {
             revert WorkforceLib.WorkforceManager__SiteNotOfOrg(siteId);
+        }
+    }
+
+    /**
+     * @dev The worker holding `seat` in `t`.
+     * @param t The site team.
+     * @param seat The seat.
+     * @return Worker id (zero = vacant).
+     */
+    function _seatHolder(StaffLib.SiteTeam storage t, StaffLib.SiteSeat seat) private view returns (bytes32) {
+        if (seat == StaffLib.SiteSeat.Manager) return t.manager;
+        if (seat == StaffLib.SiteSeat.Hr) return t.hr;
+        return t.inspector;
+    }
+
+    /**
+     * @dev Reverts unless the caller is a {MineNetRegistry} admin.
+     */
+    function _onlyAdmin() private view {
+        if (!registry.isAdmin(msg.sender)) revert WorkforceLib.WorkforceManager__NotRegistryAdmin(msg.sender);
+    }
+
+    /**
+     * @dev Reverts unless the caller is the {PayrollEngine}.
+     */
+    function _onlyPayrollEngine() private view {
+        if (msg.sender != payrollEngine || msg.sender == address(0)) {
+            revert StaffLib.WorkforceManager__NotSiteOperations(msg.sender);
+        }
+    }
+
+    /**
+     * @dev Reverts unless the caller is the {SiteOperations} contract.
+     */
+    function _onlySiteOperations() private view {
+        if (msg.sender != siteOperations || msg.sender == address(0)) {
+            revert StaffLib.WorkforceManager__NotSiteOperations(msg.sender);
         }
     }
 

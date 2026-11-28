@@ -20,6 +20,8 @@ import {CurrencyLib} from "src/finance/libraries/CurrencyLib.sol";
 import {LicenceRegistry} from "src/compliance/LicenceRegistry.sol";
 import {MineSiteRegistry} from "src/compliance/MineSiteRegistry.sol";
 import {WorkforceManager} from "src/workforce/WorkforceManager.sol";
+import {SiteOperations} from "src/workforce/SiteOperations.sol";
+import {PayrollEngine} from "src/workforce/PayrollEngine.sol";
 import {LotTagRegistry} from "src/traceability/LotTagRegistry.sol";
 import {CargoTracker} from "src/traceability/CargoTracker.sol";
 import {MineralPriceOracle} from "src/finance/MineralPriceOracle.sol";
@@ -30,6 +32,7 @@ import {B2BServices} from "src/b2b/B2BServices.sol";
 import {InspectionRegistry} from "src/compliance/InspectionRegistry.sol";
 import {AuditRegistry} from "src/compliance/AuditRegistry.sol";
 import {InspectionLib} from "src/compliance/libraries/InspectionLib.sol";
+import {LotFinance} from "src/finance/LotFinance.sol";
 
 /// A Rwandan-franc stablecoin (whole francs: 0 decimals), to test local-currency settlement.
 contract MockRWF is ERC20("Rwandan Franc Coin", "RWFC") {
@@ -68,6 +71,8 @@ abstract contract MineNetFixture is Test {
     LicenceRegistry licences;
     MineSiteRegistry sites;
     WorkforceManager workforce;
+    SiteOperations siteOps;
+    PayrollEngine payroll;
     LotTagRegistry tags;
     CargoTracker tracker;
     MineralPriceOracle prices;
@@ -76,6 +81,7 @@ abstract contract MineNetFixture is Test {
     B2BServices services;
     InspectionRegistry inspections;
     AuditRegistry audits;
+    LotFinance finance;
 
     /// The miner's mining licence, concession and active site; every fixture lot comes from `site`.
     uint256 miningLicence;
@@ -97,6 +103,8 @@ abstract contract MineNetFixture is Test {
     address regulator = makeAddr("regulator");
     address oracle = makeAddr("oracle");
     address outsider = makeAddr("outsider");
+    address financier = makeAddr("financier");
+    address insurer = makeAddr("insurer");
 
     bytes32 constant TIN = keccak256("CASSITERITE");
     bytes32 constant H = keccak256("evidence");
@@ -109,6 +117,9 @@ abstract contract MineNetFixture is Test {
     bytes32 constant RWF = "RWF";
     /// 1 RWF = 0.0008 USD (1 USD = 1,250 RWF), with 8 feed decimals.
     int256 constant RWF_RATE = 80_000;
+
+    /// Extraction the fixture records per mineral at `site`, in grams.
+    uint128 constant EXTRACTED = 1e30;
 
     uint256 private _lotNonce;
 
@@ -127,6 +138,8 @@ abstract contract MineNetFixture is Test {
         licences = new LicenceRegistry(registry);
         sites = new MineSiteRegistry(registry, licences);
         workforce = new WorkforceManager(registry, sites, currencies);
+        siteOps = new SiteOperations(registry, sites, workforce, currencies);
+        payroll = new PayrollEngine(registry, sites, workforce, currencies, siteOps);
         tags = new LotTagRegistry(registry, passport);
         tracker = new CargoTracker(registry, passport, delivery);
         prices = new MineralPriceOracle(registry);
@@ -135,6 +148,7 @@ abstract contract MineNetFixture is Test {
         services = new B2BServices(registry, currencies, passport, supplyChain, delivery);
         inspections = new InspectionRegistry(registry, passport, sites, supplyChain);
         audits = new AuditRegistry(registry);
+        finance = new LotFinance(registry, passport, currencies);
 
         vm.startPrank(admin);
         uint64 exp = uint64(block.timestamp + 365 days);
@@ -150,6 +164,8 @@ abstract contract MineNetFixture is Test {
         registry.onboard(oracle, Roles.ORACLE, "org-oracle", H, 0);
         registry.onboard(processor, Roles.PROCESSOR, "org-processor", H, exp);
         registry.onboard(customs, Roles.CUSTOMS, "org-customs", H, exp);
+        registry.onboard(financier, Roles.FINANCIER, "org-bank", H, exp);
+        registry.onboard(insurer, Roles.INSURER, "org-insurer", H, exp);
 
         passport.setEscrow(address(escrow));
         passport.setLocker(address(b2b), true);
@@ -159,7 +175,16 @@ abstract contract MineNetFixture is Test {
         passport.setModule(address(tags), true);
         passport.setModule(address(tracker), true);
         passport.setSiteRegistry(sites);
+        sites.setPassport(address(passport));
+        passport.setFinancing(address(finance));
         sites.setStaffDirectory(workforce);
+        workforce.setSiteOperations(address(siteOps));
+        workforce.setPayrollEngine(address(payroll)); // check-in gate and attendance-based pay
+        sites.setSiteOperations(address(siteOps)); // inspected shift output counts toward extraction
+        delivery.setStaffDirectory(workforce); // site managers dispatch their company's lots
+        supplyChain.setSplitter(address(market), true); // auto-split a batch to fill an order
+        supplyChain.setDeliveryManager(delivery); // never split a lot booked on a shipment
+        certs.setSplitter(address(supplyChain)); // split lots keep their parent's certificates
         currencies.setSettlementToken(usdc, USD, true);
         escrow.setMarketplace(address(market));
         certs.configureCertType(EXPORT_PERMIT, Roles.REGULATOR);
@@ -183,6 +208,9 @@ abstract contract MineNetFixture is Test {
         vm.stopPrank();
         vm.prank(miner);
         site = sites.registerSite(concession, "site-1", _siteLocation(), keccak256("site-1-survey"));
+        // the miner reports ample production, so fixture lots never hit the extraction cap
+        _extract(site, TIN, EXTRACTED);
+        _extract(site, keccak256("COLTAN"), EXTRACTED);
 
         // RMB licenses inspectors and deploys them: operators never choose who inspects their lots or sites
         vm.startPrank(admin);
@@ -221,6 +249,12 @@ abstract contract MineNetFixture is Test {
             cell: "Mubuga",
             village: "Rugarama"
         });
+    }
+
+    /// The miner records extraction at a site.
+    function _extract(uint256 siteId, bytes32 mineral, uint128 qty) internal {
+        vm.prank(miner);
+        sites.recordExtraction(siteId, mineral, qty, H);
     }
 
     function _register(uint128 qty) internal returns (uint256 id) {

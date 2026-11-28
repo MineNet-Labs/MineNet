@@ -172,6 +172,17 @@ library SiteLib {
         uint64 verifiedAt;
     }
 
+    /**
+     * @notice Production of one mineral at a site: what the holder recorded extracting, and how much of it has
+     * already been registered as lots.
+     * @param extracted Total extraction recorded, net of reductions, in grams.
+     * @param lotted Total registered as lot passports, in grams; never above `extracted`.
+     */
+    struct Production {
+        uint128 extracted;
+        uint128 lotted;
+    }
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -298,6 +309,59 @@ library SiteLib {
      */
     event InspectionRegistrySet(address indexed inspections);
 
+    /**
+     * @notice Emitted when the admin sets the lot passport allowed to draw on recorded extraction.
+     * @param passport Lot passport ({LotPassport}).
+     */
+    event PassportSet(address indexed passport);
+
+    /**
+     * @notice Emitted when the admin sets the {SiteOperations} contract.
+     * @param siteOperations The contract (zero = none).
+     */
+    event SiteOperationsSet(address siteOperations);
+
+    /**
+     * @notice Emitted when a regulator sets a licensed extraction ceiling.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param ceiling Ceiling, in grams (0 = none).
+     * @param docHash Hash of the licence decision.
+     */
+    event ExtractionCeilingSet(uint256 indexed siteId, bytes32 indexed mineralType, uint128 ceiling, bytes32 docHash);
+
+    /**
+     * @notice Emitted when extraction is recorded at a site.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param quantity Quantity extracted, in grams.
+     * @param evidenceHash Hash of the extraction record (shift log, weighbridge ticket...).
+     * @param by Recording account.
+     */
+    event ExtractionRecorded(
+        uint256 indexed siteId, bytes32 indexed mineralType, uint128 quantity, bytes32 evidenceHash, address indexed by
+    );
+
+    /**
+     * @notice Emitted when recorded, not yet lotted extraction is reduced (a correction or a regulator's finding).
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param quantity Quantity removed, in grams.
+     * @param reasonHash Hash of the reason.
+     * @param by Account that made the reduction.
+     */
+    event ExtractionReduced(
+        uint256 indexed siteId, bytes32 indexed mineralType, uint128 quantity, bytes32 reasonHash, address indexed by
+    );
+
+    /**
+     * @notice Emitted when a lot registration draws on a site's recorded extraction.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param quantity Quantity lotted, in grams.
+     */
+    event ExtractionLotted(uint256 indexed siteId, bytes32 indexed mineralType, uint128 quantity);
+
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -417,6 +481,44 @@ library SiteLib {
      * division name exceeds {MAX_PLACE_NAME_LENGTH} bytes.
      */
     error MineSiteRegistry__InvalidAdministrativeArea();
+
+    /**
+     * @notice The caller is not the lot passport.
+     * @param account The caller.
+     */
+    error MineSiteRegistry__NotPassport(address account);
+
+    /**
+     * @notice The caller is not the {SiteOperations} contract.
+     * @param account The caller.
+     */
+    error MineSiteRegistry__NotSiteOperations(address account);
+
+    /**
+     * @notice Recording this would take extraction above the licensed ceiling.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param ceiling Licensed ceiling, in grams.
+     * @param extracted Extraction it would reach, in grams.
+     */
+    error MineSiteRegistry__CeilingExceeded(uint256 siteId, bytes32 mineralType, uint128 ceiling, uint128 extracted);
+
+    /**
+     * @notice The site's recorded, not yet lotted extraction of the mineral is too small.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param available Quantity available, in grams.
+     * @param requested Quantity requested, in grams.
+     */
+    error MineSiteRegistry__InsufficientExtraction(
+        uint256 siteId, bytes32 mineralType, uint128 available, uint128 requested
+    );
+
+    /**
+     * @notice Site `siteId` cannot produce now: not Active, concession revoked or mining licence invalid.
+     * @param siteId Site id.
+     */
+    error MineSiteRegistry__SiteNotProducing(uint256 siteId);
 
     /*//////////////////////////////////////////////////////////////
                                VALIDATION

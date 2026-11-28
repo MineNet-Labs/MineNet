@@ -70,4 +70,16 @@ interface ISupplyChain {
     function recordFromModule(SupplyChainLib.CheckpointInput calldata input, address signer)
         external
         returns (uint256 index, uint256 flagId);
+
+    /**
+     * @notice Splits an inspected lot by trusted weight into smaller inspected lots.
+     * @dev The lot's owner, or an approved splitter.
+     * @param tokenId Lot to split.
+     * @param weights Child weights in grams, summing to the lot's trusted weight.
+     * @param splitHash Hash of the split record.
+     * @return ids Child token ids.
+     */
+    function splitLot(uint256 tokenId, uint128[] calldata weights, bytes32 splitHash)
+        external
+        returns (uint256[] memory ids);
 }

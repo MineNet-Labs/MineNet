@@ -58,6 +58,7 @@ contract LotPassportTest is Test {
         licences = new LicenceRegistry(registry);
         sites = new MineSiteRegistry(registry, licences);
         passport.setSiteRegistry(sites);
+        sites.setPassport(address(passport));
         vm.stopPrank();
         vm.prank(miner); // the miner consents to the refinery toll-processing its lots
         passport.setApprovalForAll(refinery, true);
@@ -70,6 +71,8 @@ contract LotPassportTest is Test {
         vm.stopPrank();
         vm.prank(miner);
         site = sites.registerSite(concession, "site-1", _siteLocation(), H);
+        vm.prank(miner); // ample recorded production, so lots never hit the extraction cap here
+        sites.recordExtraction(site, TIN, 1e30, H);
     }
 
     // ---------------------------------------------------------------- helpers
@@ -250,7 +253,7 @@ contract LotPassportTest is Test {
         assertEq(passport.custodianOf(id), miner, "custody is separate from ownership");
         assertEq(uint8(passport.getLot(id).status), uint8(PassportLib.LotStatus.Inspected));
 
-        PassportLib.PassportEvent memory e = passport.getEvent(id, passport.eventCount(id) - 1);
+        PassportLib.PassportEvent memory e = passport.getEvents(id, passport.eventCount(id) - 1, 1)[0];
         assertEq(uint8(e.eventType), uint8(PassportLib.EventType.OwnershipTransfer));
         assertEq(e.actor, miner);
         assertEq(e.counterparty, buyer);
@@ -337,7 +340,7 @@ contract LotPassportTest is Test {
 
         passport.moduleHandover(id, miner, transporter, H);
         assertEq(passport.custodianOf(id), transporter);
-        PassportLib.PassportEvent memory e = passport.getEvent(id, passport.eventCount(id) - 1);
+        PassportLib.PassportEvent memory e = passport.getEvents(id, passport.eventCount(id) - 1, 1)[0];
         assertEq(uint8(e.eventType), uint8(PassportLib.EventType.CustodyConfirmed));
         assertEq(e.actor, transporter, "receiver signs the handover");
         assertEq(e.counterparty, miner);
@@ -515,8 +518,8 @@ contract LotPassportTest is Test {
         vm.prank(inspector);
         passport.correctEvent(id, idx, keccak256("fixed"));
 
-        assertEq(passport.getEvent(id, idx).dataHash, keccak256("typo"), "original never overwritten");
-        PassportLib.PassportEvent memory c = passport.getEvent(id, idx + 1);
+        assertEq(passport.getEvents(id, idx, 1)[0].dataHash, keccak256("typo"), "original never overwritten");
+        PassportLib.PassportEvent memory c = passport.getEvents(id, idx + 1, 1)[0];
         assertEq(uint8(c.eventType), uint8(PassportLib.EventType.Correction));
         assertEq(c.corrects, idx + 1);
     }

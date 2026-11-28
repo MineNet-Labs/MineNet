@@ -70,7 +70,10 @@ contract StaffRolesTest is MineNetFixture {
     // ---------------------------------------------------------------- roles
 
     function test_BuiltInRolePermissions() public view {
-        assertEq(workforce.rolePermissions("org-miner", StaffLib.SUPERVISOR), StaffLib.RECORD_ATTENDANCE);
+        assertEq(
+            workforce.rolePermissions("org-miner", StaffLib.SUPERVISOR),
+            StaffLib.RECORD_ATTENDANCE | StaffLib.SUBMIT_REPORTS | StaffLib.AUTHORIZE_OVERTIME
+        );
         assertEq(workforce.rolePermissions("org-miner", StaffLib.LABOURER), 0);
         assertEq(workforce.staffRole(PAYROLL).roleId, StaffLib.PAYROLL_OFFICER);
         assertTrue(workforce.staffRole(PAYROLL).allSites);
@@ -93,8 +96,8 @@ contract StaffRolesTest is MineNetFixture {
         workforce.assignRole(LAB, "SHIFT_LEAD", false); // not defined yet
         workforce.defineRole("SHIFT_LEAD", StaffLib.RECORD_ATTENDANCE | StaffLib.SITE_SAFETY);
         workforce.assignRole(LAB, "SHIFT_LEAD", false);
-        vm.expectRevert(abi.encodeWithSelector(StaffLib.WorkforceManager__InvalidPermissions.selector, uint32(1 << 7)));
-        workforce.defineRole("BAD", 1 << 7);
+        vm.expectRevert(abi.encodeWithSelector(StaffLib.WorkforceManager__InvalidPermissions.selector, uint32(1 << 13)));
+        workforce.defineRole("BAD", 1 << 13);
         vm.stopPrank();
 
         vm.prank(labW);
@@ -151,7 +154,18 @@ contract StaffRolesTest is MineNetFixture {
 
     // ---------------------------------------------------------------- site manager
 
+    /// By default workers join through approved hires ({SiteOperations}); a company can still let its managers
+    /// add workers directly by redefining the role.
+    function _letManagersAddWorkers() internal {
+        vm.prank(managerW);
+        vm.expectRevert(abi.encodeWithSelector(StaffLib.WorkforceManager__OutOfScope.selector, managerW, site));
+        workforce.registerWorker(keccak256("not-yet"), address(0), site);
+        vm.prank(miner);
+        workforce.defineRole(StaffLib.SITE_MANAGER, StaffLib.builtIn(StaffLib.SITE_MANAGER) | StaffLib.MANAGE_WORKERS);
+    }
+
     function test_SiteManagerManagesWorkersAtOwnSite() public {
+        _letManagersAddWorkers();
         bytes32 hire = keccak256("new-hire");
         vm.startPrank(managerW);
         workforce.registerWorker(hire, address(0), site);
@@ -164,6 +178,7 @@ contract StaffRolesTest is MineNetFixture {
     }
 
     function test_StaffCannotChangeRoleHoldersOrThemselves() public {
+        _letManagersAddWorkers();
         vm.startPrank(managerW);
         vm.expectRevert(abi.encodeWithSelector(StaffLib.WorkforceManager__ProtectedWorker.selector, SUPER));
         workforce.setWorkerWallet(SUPER, managerW); // would hijack the supervisor's role

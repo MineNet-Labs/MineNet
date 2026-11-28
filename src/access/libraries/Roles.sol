@@ -71,4 +71,15 @@ library Roles {
      * (RMAP smelter and refiner audits), or ICPAR (licensed financial auditors).
      */
     bytes32 internal constant ACCREDITOR = keccak256("ACCREDITOR_ROLE");
+
+    /**
+     * @notice Licensed lender (bank or microfinance institution, licensed by the BNR) that finances lots and takes
+     * them as collateral ({LotFinance}).
+     */
+    bytes32 internal constant FINANCIER = keccak256("FINANCIER_ROLE");
+
+    /**
+     * @notice Licensed insurer (BNR) that binds storage and transit cover on lots ({LotFinance}).
+     */
+    bytes32 internal constant INSURER = keccak256("INSURER_ROLE");
 }

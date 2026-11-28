@@ -35,6 +35,19 @@ library CertificateLib {
     event CertificateTypeConfigured(bytes32 indexed certType, bytes32 indexed issuerRole);
 
     /**
+     * @notice Emitted when the admin sets the split linker.
+     * @param splitter The contract (zero = none).
+     */
+    event SplitterSet(address splitter);
+
+    /**
+     * @notice Emitted when a split lot is linked to the lot it was cut from.
+     * @param childId Split lot.
+     * @param parentId Parent lot.
+     */
+    event SplitLinked(uint256 indexed childId, uint256 indexed parentId);
+
+    /**
      * @notice Emitted when a certificate is issued.
      * @param certId New certificate id.
      * @param tokenId Lot passport it is about.
@@ -66,6 +79,12 @@ library CertificateLib {
      * @param account The account.
      */
     error CertificateRegistry__NotRegistryAdmin(address account);
+
+    /**
+     * @notice The caller is not the split linker ({SupplyChain}).
+     * @param account The caller.
+     */
+    error CertificateRegistry__NotSplitter(address account);
 
     /**
      * @notice `certType` has not been configured.

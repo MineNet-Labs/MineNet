@@ -333,17 +333,12 @@ contract MarketplaceTest is MineNetFixture {
     function test_ClaimBuyRequest_Matching() public {
         uint256 requestId = _request(8_000, 12_000, 6_000);
         uint256 small = _inspected(5_000);
-        uint256 big = _inspected(20_000);
 
-        vm.startPrank(miner);
+        vm.startPrank(miner); // a heavier lot is split instead (see MarketplaceNegotiation.t.sol)
         vm.expectRevert(
             abi.encodeWithSelector(MarketplaceLib.Marketplace__WeightOutOfRange.selector, 5_000, 8_000, 12_000)
         );
         market.claimBuyRequest(requestId, small, PER_KG);
-        vm.expectRevert(
-            abi.encodeWithSelector(MarketplaceLib.Marketplace__WeightOutOfRange.selector, 20_000, 8_000, 12_000)
-        );
-        market.claimBuyRequest(requestId, big, PER_KG);
         vm.stopPrank();
 
         uint256 id = _inspected(10_000);
@@ -539,12 +534,14 @@ contract MarketplaceTest is MineNetFixture {
                 TIN, usdc, 1_000, maxQty, maxPrice, 0, 14 days, uint64(block.timestamp + 1 days), H
             )
         );
+        uint256 deposit = market.getBuyRequest(requestId).lockedAmount;
         uint256 id = _inspected(weight);
         vm.prank(miner);
         uint256 orderId = market.claimBuyRequest(requestId, id, offer);
 
-        uint256 deposit = market.getBuyRequest(requestId).lockedAmount;
-        assertEq(escrow.getOrder(orderId).amount + market.claimable(usdc, buyer), deposit);
-        assertEq(usdc.balanceOf(address(market)), market.claimable(usdc, buyer));
+        // what is left of a partly filled request stays locked for the rest
+        uint256 stillLocked = market.getBuyRequest(requestId).lockedAmount;
+        assertEq(escrow.getOrder(orderId).amount + market.claimable(usdc, buyer) + stillLocked, deposit);
+        assertEq(usdc.balanceOf(address(market)), market.claimable(usdc, buyer) + stillLocked);
     }
 }

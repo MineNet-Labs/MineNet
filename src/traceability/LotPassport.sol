@@ -150,6 +150,17 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
      */
     mapping(uint256 tokenId => uint256 siteId) public siteOf;
 
+    /**
+     * @notice The lot-finance contract ({LotFinance}) that records liens and insurance cover.
+     */
+    address public financing;
+
+    /**
+     * @dev Token id => collateral for an active lien. An encumbered lot changes owner only through an
+     * {escrow} sale (which repays the financier first), and cannot be processed or locked by another trade contract.
+     */
+    mapping(uint256 tokenId => bool) private _encumbered;
+
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -167,9 +178,7 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
      * @notice Restricts a function to {MineNetRegistry} admins.
      */
     modifier onlyRegistryAdmin() {
-        if (!registry.isAdmin(_msgSender())) {
-            revert PassportLib.LotPassport__NotRegistryAdmin(_msgSender());
-        }
+        _onlyRegistryAdmin();
         _;
     }
 
@@ -178,7 +187,7 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
      * @param tokenId Token id.
      */
     modifier lotExists(uint256 tokenId) {
-        if (_lots[tokenId].status == PassportLib.LotStatus.None) revert PassportLib.LotPassport__UnknownLot(tokenId);
+        _requireLot(tokenId);
         _;
     }
 
@@ -281,6 +290,46 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
         emit PassportLib.ModuleSet(module, enabled);
     }
 
+    /**
+     * @notice Sets the lot-finance contract that records liens and insurance cover.
+     * @dev Only a {MineNetRegistry} admin, once: the escrow settles liens through this contract, so replacing it
+     * would strand the liens recorded by the old one.
+     * @param financing_ Lot-finance contract ({LotFinance}); non-zero.
+     * @custom:emits FinancingSet
+     */
+    function setFinancing(address financing_) external onlyRegistryAdmin {
+        if (financing_ == address(0)) revert PassportLib.LotPassport__ZeroAddress();
+        if (financing != address(0)) revert PassportLib.LotPassport__FinancingAlreadySet(financing);
+        financing = financing_;
+        emit PassportLib.FinancingSet(financing_);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                 FINANCE: LIENS AND INSURANCE COVER
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @inheritdoc ILotPassport
+     * @dev Only {financing}, which checks the owner's consent and the financier's or insurer's licence. `Lien`
+     * encumbers the lot and `LienReleased` frees it; `Insured` only records the cover. Works while paused, so a
+     * repayment can always release its lien.
+     * @custom:emits PassportEventRecorded (Lien / LienReleased / Insured)
+     */
+    function recordFinancing(uint256 tokenId, PassportLib.EventType eventType, address actor, bytes32 dataHash)
+        external
+        lotExists(tokenId)
+    {
+        if (_msgSender() != financing) revert PassportLib.LotPassport__NotFinancing(_msgSender());
+        if (eventType == PassportLib.EventType.Lien) {
+            _encumbered[tokenId] = true;
+        } else if (eventType == PassportLib.EventType.LienReleased) {
+            delete _encumbered[tokenId];
+        } else if (eventType != PassportLib.EventType.Insured) {
+            revert PassportLib.LotPassport__InvalidFinanceEvent(eventType);
+        }
+        _recordAs(tokenId, eventType, actor, address(0), dataHash, 0);
+    }
+
     /*//////////////////////////////////////////////////////////////
                    MODULES: TWO-PARTY HANDOVER & FLAGS
     //////////////////////////////////////////////////////////////*/
@@ -338,6 +387,57 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
         flagId = _raiseFlag(tokenId, reporter, evidenceHash);
     }
 
+    /**
+     * @notice Splits an inspected lot into smaller lots of the same mineral that stay inspected (e.g. to fill an
+     * order for part of a batch). The parent is consumed; children keep its owner, custodian and site.
+     * @dev Only a module ({SupplyChain}, which also carries over the trusted weights and grade). The lot must be
+     * inspected, unfrozen, not locked under a trade, not pledged and have no pending handover. Child lot ids are
+     * `keccak256(abi.encode(parentLotId, index))`.
+     * @param tokenId Lot to split.
+     * @param quantities Child quantities in grams (at least 2, each non-zero), summing to the lot's quantity.
+     * @param splitHash Hash of the split record (order reference, weighing tickets).
+     * @return ids Child token ids, in `quantities` order.
+     * @custom:emits PassportEventRecorded (ProcessingInput / ProcessingOutput)
+     */
+    function moduleSplit(uint256 tokenId, uint128[] calldata quantities, bytes32 splitHash)
+        external
+        whenNotPaused
+        lotExists(tokenId)
+        returns (uint256[] memory ids)
+    {
+        _onlyModule();
+        PassportLib.Lot storage lot = _lots[tokenId];
+        if (lot.status != PassportLib.LotStatus.Inspected) {
+            revert PassportLib.LotPassport__InvalidStatus(tokenId, lot.status);
+        }
+        if (quantities.length < 2) revert PassportLib.LotPassport__EmptyBatch();
+        if (_pendingCustody[tokenId].to != address(0)) revert PassportLib.LotPassport__CustodyPending(tokenId);
+        if (lockedBy[tokenId] != address(0)) revert PassportLib.LotPassport__LotLocked(tokenId);
+        if (_encumbered[tokenId]) revert PassportLib.LotPassport__LotEncumbered(tokenId);
+        _requireNotFrozen(tokenId);
+
+        _setStatus(tokenId, PassportLib.LotStatus.Consumed);
+        _record(tokenId, PassportLib.EventType.ProcessingInput, address(0), splitHash, 0);
+        address lotOwner = _ownerOf(tokenId);
+        uint256 site = siteOf[tokenId];
+        uint256 total;
+        ids = new uint256[](quantities.length);
+        uint256[] storage kids = _children[tokenId];
+        for (uint256 i; i < quantities.length; ++i) {
+            total += quantities[i];
+            uint256 id = _createLot(
+                keccak256(abi.encode(lot.lotId, i)), lot.mineralType, quantities[i], lotOwner, lot.custodian
+            );
+            ids[i] = id;
+            _setStatus(id, PassportLib.LotStatus.Inspected);
+            siteOf[id] = site;
+            _parents[id].push(tokenId);
+            kids.push(id);
+            _record(id, PassportLib.EventType.ProcessingOutput, address(0), splitHash, tokenId);
+        }
+        if (total != lot.quantity) revert PassportLib.LotPassport__QuantityExceeded(lot.quantity, total);
+    }
+
     /*//////////////////////////////////////////////////////////////
                            ESCROW: TRADE LOCKS
     //////////////////////////////////////////////////////////////*/
@@ -354,6 +454,7 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
     function lockForEscrow(uint256 tokenId) external whenNotPaused {
         address locker = _onlyLocker();
         if (lockedBy[tokenId] != address(0)) revert PassportLib.LotPassport__LotLocked(tokenId);
+        if (_encumbered[tokenId] && locker != escrow) revert PassportLib.LotPassport__LotEncumbered(tokenId);
         if (!_isAuthorized(_requireOwned(tokenId), locker, tokenId)) {
             revert PassportLib.LotPassport__EscrowNotApproved(tokenId);
         }
@@ -404,7 +505,9 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
      * in
      * a concession with a valid mining licence (licence-gated entry). Idempotent: each internal `lotId` can produce
      * at most one token; a retry reverts with `LotPassport__LotAlreadyRegistered`, which tells the backend the earlier
-     * mint already succeeded.
+     * mint already succeeded. The quantity is drawn from the site's recorded, not yet lotted extraction of that
+     * mineral ({MineSiteRegistry-recordExtraction}), so a site cannot lot more than it reported producing (stops
+     * outside minerals being laundered through a licensed site).
      * @param lotId Internal, immutable lot id from the backend; non-zero.
      * @param mineralType Mineral identifier, e.g. `keccak256("CASSITERITE")`.
      * @param quantity Quantity, in grams; non-zero.
@@ -424,6 +527,7 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
         ISiteRegistry sites = siteRegistry;
         if (address(sites) == address(0)) revert PassportLib.LotPassport__SitesNotConfigured();
         if (!sites.canProduce(siteId, miner)) revert PassportLib.LotPassport__SiteNotProducing(siteId, miner);
+        sites.consumeExtraction(siteId, mineralType, quantity); // reverts above the site's recorded extraction
         tokenId = _createLot(lotId, mineralType, quantity, miner, miner);
         siteOf[tokenId] = siteId;
         _record(tokenId, PassportLib.EventType.Registration, address(0), docsHash, 0);
@@ -509,6 +613,8 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
      * - the lot has passed inspection and is not frozen;
      * - the recipient is authorised to own lots (`OWN_LOT`: BUYER or REFINERY by default);
      * - a lot locked under an escrow order moves only through the escrow;
+     * - a lot under a lien never moves: an escrow sale has {financing} repay and release the lien before the
+     *   title transfer;
      * - passports are never burned.
      * Custody does not move with ownership; physical handover uses the custody flow. Listings live in the
      * {Marketplace}, not here. Every transfer is recorded as an `OwnershipTransfer` event.
@@ -526,6 +632,7 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
             address locker = lockedBy[tokenId];
             bool settlement = locker != address(0) && _msgSender() == locker;
             if (locker != address(0) && !settlement) revert PassportLib.LotPassport__LotLocked(tokenId);
+            if (_encumbered[tokenId]) revert PassportLib.LotPassport__LotEncumbered(tokenId); // sale releases it first
             PassportLib.Lot storage lot = _lots[tokenId];
             if (lot.status != PassportLib.LotStatus.Inspected) {
                 revert PassportLib.LotPassport__InvalidStatus(tokenId, lot.status);
@@ -658,6 +765,7 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
             }
             if (_pendingCustody[id].to != address(0)) revert PassportLib.LotPassport__CustodyPending(id);
             if (lockedBy[id] != address(0)) revert PassportLib.LotPassport__LotLocked(id);
+            if (_encumbered[id]) revert PassportLib.LotPassport__LotEncumbered(id);
             _requireNotFrozen(id);
             // Status becomes Consumed below, so a repeated id fails the status check above.
             inputTotal += lot.quantity;
@@ -836,18 +944,6 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
     }
 
     /**
-     * @notice Returns one event of a lot's history.
-     * @dev Reverts if `index` is out of range.
-     * @param tokenId Token id.
-     * @param index Event index.
-     * @return The event.
-     */
-    function getEvent(uint256 tokenId, uint256 index) external view returns (PassportLib.PassportEvent memory) {
-        if (index >= _events[tokenId].length) revert PassportLib.LotPassport__UnknownEvent(tokenId, index);
-        return _events[tokenId][index];
-    }
-
-    /**
      * @notice Paginated event history.
      * @param tokenId Token id.
      * @param offset First index.
@@ -902,14 +998,6 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
      */
     function getFlag(uint256 flagId) external view returns (PassportLib.Flag memory) {
         return _flags[flagId];
-    }
-
-    /**
-     * @notice Number of passports ever minted.
-     * @return Total token count.
-     */
-    function totalMinted() external view returns (uint256) {
-        return _nextTokenId - 1;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1028,6 +1116,22 @@ contract LotPassport is ERC721, Pausable, ILotPassport {
      */
     function _requireAuthorized(address account, bytes32 action) private view {
         if (!registry.isAuthorized(account, action)) revert PassportLib.LotPassport__Unauthorized(account, action);
+    }
+
+    /**
+     * @dev Reverts unless the caller is a {MineNetRegistry} admin. Kept out of the modifier so its code is not
+     * repeated at every admin function.
+     */
+    function _onlyRegistryAdmin() private view {
+        if (!registry.isAdmin(_msgSender())) revert PassportLib.LotPassport__NotRegistryAdmin(_msgSender());
+    }
+
+    /**
+     * @dev Reverts unless lot `tokenId` exists.
+     * @param tokenId Token id.
+     */
+    function _requireLot(uint256 tokenId) private view {
+        if (_lots[tokenId].status == PassportLib.LotStatus.None) revert PassportLib.LotPassport__UnknownLot(tokenId);
     }
 
     /**
