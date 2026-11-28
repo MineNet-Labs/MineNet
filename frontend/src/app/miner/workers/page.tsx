@@ -98,7 +98,7 @@ export default function WorkersPage() {
         }
       />
 
-      <Card className="flex items-center gap-4 px-6 py-4 text-base">
+      <Card className="flex items-center gap-4 px-5 py-5 text-base">
         <IconUsers className="size-6" stroke={1.6} />
         <b className="font-medium">{workers.length} workers</b>
         <span className="h-5 border-l border-gray-200" />

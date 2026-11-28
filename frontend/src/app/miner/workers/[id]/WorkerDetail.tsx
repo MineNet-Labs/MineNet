@@ -52,7 +52,7 @@ export function WorkerDetail() {
       />
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconUser} iconClass="text-[#1F5B3A]">Profile</CardTitle>
           <div className="mt-5">
             <Facts
@@ -82,7 +82,7 @@ export function WorkerDetail() {
           </div>
         </Card>
 
-        <Card className="self-start p-6">
+        <Card className="self-start p-5">
           <CardTitle icon={IconCash} iconClass="text-[#B5551A]">Salary payments</CardTitle>
           <p className="mt-3 text-sm text-ink/70">Paid so far: <b>RWF {fmtNum(paid)}</b></p>
           {payments.length === 0 ? (

@@ -95,7 +95,7 @@ export default function DocumentsPage() {
       </div>
 
       {expiring.length > 0 && (
-        <Card className="flex flex-wrap items-center gap-4 border border-[#f6d6bd] bg-accent-soft/60 px-6 py-4">
+        <Card className="flex flex-wrap items-center gap-4 border border-[#f6d6bd] bg-accent-soft/60 px-5 py-5">
           <IconAlertTriangle className="size-6 text-accent" />
           <p className="flex-1 text-[15px]">
             <b className="font-semibold">{expiring[0].name}</b> expires on {expiring[0].expires}
@@ -107,15 +107,15 @@ export default function DocumentsPage() {
         </Card>
       )}
 
-      <Card className="pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6">
+      <Card className="pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5">
           <CardTitle icon={IconFileText}>General Documents</CardTitle>
           <div className="flex gap-2">
             <FilterSelect label="All types" options={[...new Set(docs.map((d) => d.kind))]} value={kind} onChange={setKind} />
             <FilterSelect label="Any validity" options={["Valid", "Expiring soon", "Expired", "No expiry"]} value={valid} onChange={setValid} />
           </div>
         </div>
-        <div className="mt-5 overflow-x-auto px-3">
+        <div className="mt-5 overflow-x-auto px-2">
           {page.length === 0 ? (
             <Empty>No documents match these filters.</Empty>
           ) : (
@@ -179,7 +179,7 @@ export default function DocumentsPage() {
         <Pagination {...pager} noun="documents" />
       </Card>
 
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle icon={IconCertificate}>Site documents</CardTitle>
         <p className="mt-1 text-sm text-ink/70">Licences, environmental assessments and other papers of one site are kept on that site&apos;s page.</p>
         <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">

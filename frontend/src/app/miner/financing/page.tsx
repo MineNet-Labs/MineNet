@@ -37,9 +37,9 @@ export default function FinancingPage() {
         <StatCard deltaDir="none" icon={IconBuildingBank} tone="gray" label="Repaid loans" value={loans.filter((l) => l.status === "Repaid").length} delta="" note="all time" spark={[1, 1, 1, 2, 2, 2, 2]} />
       </div>
 
-      <Card className="pt-6">
-        <div className="px-6"><CardTitle icon={IconBuildingBank} iconClass="text-[#1F5B3A]">Loans</CardTitle></div>
-        <div className="mt-5 overflow-x-auto px-3 pb-4">
+      <Card className="pt-5">
+        <div className="px-5"><CardTitle icon={IconBuildingBank} iconClass="text-[#1F5B3A]">Loans</CardTitle></div>
+        <div className="mt-5 overflow-x-auto px-2 pb-4">
           {loans.length === 0 ? (
             <Empty>No loans yet.</Empty>
           ) : (
@@ -82,7 +82,7 @@ export default function FinancingPage() {
         </div>
       </Card>
 
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle icon={IconLock}>How a lien works</CardTitle>
         <ol className="mt-4 grid gap-4 text-sm md:grid-cols-3">
           {[

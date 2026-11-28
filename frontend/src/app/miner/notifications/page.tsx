@@ -30,7 +30,7 @@ export default function NotificationsPage() {
         actions={<PrimaryButton icon={IconChecks} disabled={!unread} onClick={markAll} className="disabled:opacity-50">Mark all as read</PrimaryButton>}
       />
       <Card className="pt-5">
-        <div className="overflow-x-auto border-b border-gray-100 px-6">
+        <div className="overflow-x-auto border-b border-gray-100 px-5">
           <Tabs
             value={tab}
             onChange={setTab}

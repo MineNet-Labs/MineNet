@@ -35,8 +35,8 @@ export default function ShiftReportsPage() {
         <StatCard deltaDir="none" icon={IconUsers} tone="gray" label="kg per labour hour" value={hours ? (output / hours).toFixed(2) : "—"} delta="" note="productivity" spark={[2, 3, 2, 3, 3, 4, 3]} />
       </div>
 
-      <Card className="pt-6">
-        <div className="flex items-center justify-between px-6">
+      <Card className="pt-5">
+        <div className="flex items-center justify-between px-5">
           <CardTitle icon={IconNotes} iconClass="text-[#1F5B3A]">Reports</CardTitle>
           <div className="flex gap-3">
             <FilterSelect label="All sites" options={sites.map((s) => s.name)} value={site} onChange={setSite} />
@@ -61,7 +61,7 @@ export default function ShiftReportsPage() {
             </button>
           </div>
         </div>
-        <div className="mt-4 px-3 pb-4">
+        <div className="mt-4 px-2 pb-4">
           {rows.length === 0 ? (
             <Empty>No shift reports yet.</Empty>
           ) : (

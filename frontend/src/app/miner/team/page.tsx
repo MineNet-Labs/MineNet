@@ -36,9 +36,9 @@ export default function TeamPage() {
       <PageHeader title="Team" subtitle="Give each site its own manager and invite HR by email. Managers run their site and send hiring, new shafts, site documents and handovers to you for approval." />
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_400px]">
-        <Card className="pt-6">
-          <div className="px-6"><CardTitle icon={IconUsersGroup} iconClass="text-[#1F5B3A]">Members</CardTitle></div>
-          <div className="mt-4 overflow-x-auto px-3 pb-4">
+        <Card className="pt-5">
+          <div className="px-5"><CardTitle icon={IconUsersGroup} iconClass="text-[#1F5B3A]">Members</CardTitle></div>
+          <div className="mt-4 overflow-x-auto px-2 pb-4">
             <table className="w-full text-left text-sm">
               <thead className="bg-head">
                 <tr>{["Member", "Role", "Sites", "Status", "Invited", ""].map((h) => <th key={h} className="px-3 py-3 text-[13px] font-medium">{h}</th>)}</tr>
@@ -93,7 +93,7 @@ export default function TeamPage() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconUserPlus} iconClass="text-[#B5551A]">Invite a member</CardTitle>
           <form
             className="mt-5 space-y-4"
@@ -140,7 +140,7 @@ export default function TeamPage() {
         </Card>
       </div>
 
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle>What each role can open</CardTitle>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           {(Object.keys(ACCESS) as Role[]).map((r) => (

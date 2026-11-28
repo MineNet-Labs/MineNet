@@ -41,9 +41,9 @@ export default function InsurancePage() {
         <StatCard deltaDir="none" icon={IconAlertTriangle} tone="gray" label="Open claims" value={claims.filter((c) => c.status === "Filed").length} delta="" note="with insurers" spark={[1, 1, 1, 2, 2, 2, 2]} />
       </div>
 
-      <Card className="pt-6">
-        <div className="px-6"><CardTitle icon={IconUmbrella} iconClass="text-[#0e7490]">Policies</CardTitle></div>
-        <div className="mt-5 overflow-x-auto px-3 pb-4">
+      <Card className="pt-5">
+        <div className="px-5"><CardTitle icon={IconUmbrella} iconClass="text-[#0e7490]">Policies</CardTitle></div>
+        <div className="mt-5 overflow-x-auto px-2 pb-4">
           {policies.length === 0 ? (
             <Empty>No policies yet.</Empty>
           ) : (
@@ -94,9 +94,9 @@ export default function InsurancePage() {
         </div>
       </Card>
 
-      <Card className="pt-6">
-        <div className="px-6"><CardTitle icon={IconAlertTriangle} iconClass="text-danger">Claims</CardTitle></div>
-        <div className="mt-5 overflow-x-auto px-3 pb-4">
+      <Card className="pt-5">
+        <div className="px-5"><CardTitle icon={IconAlertTriangle} iconClass="text-danger">Claims</CardTitle></div>
+        <div className="mt-5 overflow-x-auto px-2 pb-4">
           {claims.length === 0 ? (
             <Empty>No claims filed.</Empty>
           ) : (

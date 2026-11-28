@@ -61,7 +61,7 @@ export default function SettingsPage() {
           toast("Settings saved");
         }}
       >
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconUser} iconClass="text-[#1F5B3A]">Profile</CardTitle>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <Field label="Full name"><input name="contact" required defaultValue={org.contact} className={inputClass} /></Field>
@@ -72,7 +72,7 @@ export default function SettingsPage() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconBuildingBank} iconClass="text-[#B5551A]">Organisation</CardTitle>
           <p className="mt-1 text-xs text-ink/60">These details come from your RMB validation and can only be changed by a regulator.</p>
           <dl className="mt-5 grid grid-cols-2 gap-4 text-sm">
@@ -90,7 +90,7 @@ export default function SettingsPage() {
           <Link href="/miner/licence" className="mt-4 inline-block text-sm font-medium text-accent hover:underline">Licence & Validation</Link>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconBell} iconClass="text-accent">Notifications</CardTitle>
           <div className="mt-5 flex gap-6 text-sm">
             <label className="flex items-center gap-2"><input type="checkbox" checked={p.email} onChange={(e) => edit({ email: e.target.checked })} className="size-4 accent-[#1F5B3A]" /> Email</label>
@@ -106,7 +106,7 @@ export default function SettingsPage() {
           </ul>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconLanguage}>Language</CardTitle>
           <Field label="Interface language" className="mt-5">
             <Select value={p.language} onChange={(e) => edit({ language: e.target.value })} className={inputClass}>

@@ -17,7 +17,7 @@ export default function InsurerSupportPage() {
     <>
       <PageHeader title="Support" subtitle="Answers for insurers, or reach the MineNet team." />
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconMessage}>Frequently asked questions</CardTitle>
           <ul className="mt-4 divide-y divide-gray-100">
             {faqs.map((f, i) => (
@@ -31,7 +31,7 @@ export default function InsurerSupportPage() {
             ))}
           </ul>
         </Card>
-        <Card className="space-y-4 p-6 text-sm">
+        <Card className="space-y-4 p-5 text-sm">
           <CardTitle>Contact</CardTitle>
           <p className="flex items-center gap-3"><IconMail className="size-5 text-accent" /> support@minenet.rw</p>
           <p className="flex items-center gap-3"><IconPhone className="size-5 text-accent" /> +250 788 000 000</p>

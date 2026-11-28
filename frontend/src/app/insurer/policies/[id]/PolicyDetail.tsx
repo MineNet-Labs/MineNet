@@ -46,7 +46,7 @@ export function PolicyDetail() {
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
         <div className="space-y-5">
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconUmbrella} iconClass="text-[#0e7490]">Policy</CardTitle>
             <div className="mt-5">
               <Facts
@@ -61,7 +61,7 @@ export function PolicyDetail() {
               />
             </div>
           </Card>
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconRoute} iconClass="text-[#B5551A]">Lot passport</CardTitle>
             <p className="mt-1 text-xs text-ink/60">Signed history of the insured lot (read-only).</p>
             <ol className="relative mt-5 space-y-4 border-l-2 border-gray-100 pl-6">
@@ -78,7 +78,7 @@ export function PolicyDetail() {
         </div>
         <div className="space-y-5">
           {lot && (
-            <Card className="p-6">
+            <Card className="p-5">
               <CardTitle icon={IconShieldCheck}>Insured lot</CardTitle>
               <div className="mt-4">
                 <Facts
@@ -95,7 +95,7 @@ export function PolicyDetail() {
               </div>
             </Card>
           )}
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle>Claims on this policy</CardTitle>
             <ul className="mt-4 space-y-2 text-sm">
               {own.map((c) => (

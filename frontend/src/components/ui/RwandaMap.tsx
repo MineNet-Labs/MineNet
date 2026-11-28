@@ -99,7 +99,7 @@ export function RwandaMap({
 
       {/* Floating info card (the design's "Kigali Site · 72 Lots") */}
       {site && (
-        <div className="pointer-events-none absolute top-1/2 right-4 z-10 -translate-y-1/2 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
+        <div className="pointer-events-none absolute top-1/2 right-4 z-10 -translate-y-1/2 rounded-xl border border-gray-200 bg-white px-2.5 py-2.5 shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
           <p className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
             <i className={`size-[7px] rounded-full ${site.status === "active" ? "bg-[#1F5B3A]" : "bg-accent"}`} />
             {site.name}

@@ -79,13 +79,13 @@ export default function RiskPage() {
         subtitle="How much you would pay if things go wrong, and where that money sits right now."
       />
       <div className="grid items-start gap-5 xl:grid-cols-3">
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconMapPin} iconClass="text-[#B5551A]">
             By mineral
           </CardTitle>
           <List rows={byMineral} color={mineralColor} total={total} />
         </Card>
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconTruck} iconClass="text-accent">
             By custody state
           </CardTitle>
@@ -105,7 +105,7 @@ export default function RiskPage() {
             both-sides-confirmed handovers.
           </p>
         </Card>
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconBuildingWarehouse} action={<ViewAll href="/insurer/policies" />}>
             Largest single risks
           </CardTitle>
@@ -127,7 +127,7 @@ export default function RiskPage() {
           </ul>
         </Card>
       </div>
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle icon={IconMapPin} iconClass="text-[#1F5B3A]">
           Origin sites of insured lots (USD thousands)
         </CardTitle>

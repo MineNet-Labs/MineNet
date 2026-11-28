@@ -73,7 +73,7 @@ export function Modal({
         className="flex w-full shrink-0 flex-col rounded-[22px] bg-white shadow-[0_20px_60px_rgba(17,24,39,0.18)]"
         style={{ maxWidth: width, transform: scale < 1 ? `scale(${scale})` : undefined }}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-6 pt-6 pb-5">
+        <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 pt-6 pb-5">
           <div>
             <h2 className="font-sans text-xl font-semibold">{title}</h2>
             {subtitle && <p className="mt-1.5 text-sm text-ink/70">{subtitle}</p>}
@@ -82,8 +82,8 @@ export function Modal({
             <IconX className="size-5" stroke={2.4} />
           </button>
         </div>
-        <div className="px-6 py-5">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-4 border-t border-gray-100 px-6 py-4">{footer}</div>}
+        <div className="px-5 py-5">{children}</div>
+        {footer && <div className="flex items-center justify-end gap-4 border-t border-gray-100 px-5 py-4">{footer}</div>}
       </div>
     </div>
   );

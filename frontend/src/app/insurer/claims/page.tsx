@@ -17,10 +17,10 @@ export default function InsurerClaimsPage() {
     <>
       <PageHeader title="Claims" subtitle="Losses reported by your clients. Review the lot's history, then pay or reject." />
       <Card className="pt-5">
-        <div className="border-b border-gray-100 px-6">
+        <div className="border-b border-gray-100 px-5">
           <Tabs value={tab} onChange={setTab} items={["Filed", "Approved", "Rejected", "All"].map((k) => ({ key: k, label: k === "Filed" ? "To decide" : k, count: k === "All" ? claims.length : claims.filter((c) => c.status === k).length }))} />
         </div>
-        <div className="overflow-x-auto px-3 py-4">
+        <div className="overflow-x-auto px-2 py-4">
           {rows.length === 0 ? (
             <Empty>No claims here.</Empty>
           ) : (

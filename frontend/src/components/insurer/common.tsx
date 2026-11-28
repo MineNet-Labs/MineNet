@@ -114,6 +114,7 @@ export function InsurerTopbar() {
               ))}
               <div className="mt-1 border-t border-gray-100 pt-1">
                 <MenuItem icon={IconArrowBackUp} onClick={() => (close(), router.push("/miner"))}>Miner portal (demo)</MenuItem>
+                <MenuItem icon={IconArrowBackUp} onClick={() => (close(), router.push("/supply"))}>Supply chain portal (demo)</MenuItem>
                 <MenuItem
                   icon={IconRefresh}
                   onClick={async () => {

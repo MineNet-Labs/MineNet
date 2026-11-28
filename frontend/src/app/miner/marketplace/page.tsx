@@ -122,15 +122,15 @@ export default function MarketplacePage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
         <StatCard icon={IconBuildingStore} tone="orange" label="Open Buyer Requests" value={requests.length} delta="+10" spark={[3, 4, 3.5, 5, 4.5, 6, 9]} />
         <StatCard icon={IconScale} tone="violet" label="Total Mineral Demand" value={`${totalDemand.toFixed(1)} t`} delta="+9%" spark={[3, 4, 3.5, 5, 5.5, 6.5, 8]} />
         <StatCard icon={IconSend} tone="orange" label="Active Offers" value={activeOffers.length} delta={`${countered} countered`} spark={[3, 4, 3, 5, 4, 4.5, 4]} />
         <StatCard icon={IconHeartHandshake} tone="green" label="Accepted Offers" value={accepted} delta="+1" spark={[3, 3, 4, 4, 5, 5, 8]} />
       </div>
 
-      <Card className="pt-6">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6">
+      <Card className="pt-5">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5">
           <div className="flex gap-7">
             {tabs.map((t) => (
               <button
@@ -151,7 +151,7 @@ export default function MarketplacePage() {
 
         {tab === "demand" && (
           <>
-            <div className="mt-4 flex flex-wrap items-center gap-3 px-6">
+            <div className="mt-4 flex flex-wrap items-center gap-3 px-5">
               <FilterSelect label="All minerals" options={minerals} value={mineral} onChange={setMineral} />
               <FilterSelect label="All locations" options={countries} value={location} onChange={setLocation} />
               <FilterSelect label="Any grade" options={GRADES} value={grade} onChange={setGrade} />
@@ -162,7 +162,7 @@ export default function MarketplacePage() {
                 </button>
               )}
             </div>
-            <div className="mt-5 overflow-x-auto px-3 pb-3">
+            <div className="mt-5 overflow-x-auto px-2 pb-3">
               {demand.length === 0 ? (
                 <Empty>No buyer requests match these filters.</Empty>
               ) : (
@@ -227,7 +227,7 @@ export default function MarketplacePage() {
         )}
 
         {tab === "listings" && (
-          <div className="mt-4 overflow-x-auto px-3 pb-3">
+          <div className="mt-4 overflow-x-auto px-2 pb-3">
             {listings.length === 0 ? (
               <Empty>
                 You have no listings yet.{" "}
@@ -284,7 +284,7 @@ export default function MarketplacePage() {
         )}
 
         {tab === "offers" && (
-          <div className="mt-4 overflow-x-auto px-3 pb-3">
+          <div className="mt-4 overflow-x-auto px-2 pb-3">
             {offers.length === 0 ? (
               <Empty>You haven&apos;t sent any offers yet. Open Buyer Demand and choose “Make Offer”.</Empty>
             ) : (

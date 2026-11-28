@@ -14,13 +14,13 @@ import { SectionTabs } from "@/components/layout/SectionTabs";
 // Below the lg breakpoint the sidebar is replaced by the Topbar's menu button.
 export default function MinerLayout({ children }: LayoutProps<"/miner">) {
   return (
-    <div className="flex min-h-screen gap-6 bg-page p-3 lg:p-4">
+    <div className="flex min-h-screen gap-5 bg-page p-3 lg:p-4">
       <div className="hidden lg:flex">
         <Suspense fallback={<div className="w-[208px] shrink-0 rounded-[28px] bg-white" />}>
           <Sidebar />
         </Suspense>
       </div>
-      <div className="min-w-0 flex-1 space-y-6 pb-24 lg:pr-2">
+      <div className="min-w-0 flex-1 space-y-5 pb-24 lg:pr-2">
         <Suspense fallback={<div className="h-12" />}>
           <Topbar />
         </Suspense>

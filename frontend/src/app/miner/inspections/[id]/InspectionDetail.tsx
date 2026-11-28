@@ -74,7 +74,7 @@ export function InspectionDetail() {
         }
       />
 
-      <Card className="p-6">
+      <Card className="p-5">
         <ol className="grid grid-cols-4 gap-2">
           {STEPS.map((s, i) => {
             const label = i === 3 && ins.status === "Rejected" ? "Rejected" : s;
@@ -98,7 +98,7 @@ export function InspectionDetail() {
       </Card>
 
       <div className="grid items-start gap-5 xl:grid-cols-2">
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconShieldCheck} iconClass="text-[#1F5B3A]">Request</CardTitle>
           <div className="mt-5">
             <Facts
@@ -117,7 +117,7 @@ export function InspectionDetail() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconFlask} iconClass="text-[#2563eb]">Results</CardTitle>
           {r ? (
             <>

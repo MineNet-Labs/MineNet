@@ -112,8 +112,8 @@ export default function ReportsPage() {
         <StatCard icon={IconFileText} tone="gray" label="Scheduled" value="3" delta="+1" deltaDir="none" deltaClass="text-ink" note="this period" spark={[3, 4.5, 4, 6, 5.5, 7, 8]} />
       </div>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[1fr_402px]">
-        <Card className="p-6">
+      <div className="grid gap-5 xl:grid-cols-[1fr_402px]">
+        <Card className="p-5">
           <CardTitle
             icon={IconChartBar}
             action={
@@ -140,9 +140,9 @@ export default function ReportsPage() {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="flex flex-col p-5">
           <CardTitle icon={IconChartPie}>Reports by Type</CardTitle>
-          <div className="mt-14 flex items-center gap-7">
+          <div className="my-auto flex items-center gap-7 pt-5">
             <Donut
               size={150}
               thickness={24}
@@ -167,7 +167,7 @@ export default function ReportsPage() {
         </Card>
       </div>
 
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle
           icon={IconFileText}
           action={
@@ -228,24 +228,24 @@ export default function ReportsPage() {
         <LiveBadge />
       </div>
 
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle icon={IconRoute}>Chain of Custody Flow</CardTitle>
         <p className="mt-1 text-sm text-ink/70">Tonnes moving from mine sites through inspection, storage, processing and refining to buyers.</p>
         <div className="mt-4"><SupplyChainSankey /></div>
       </Card>
 
-      <div className="grid items-start gap-5 xl:grid-cols-2">
-        <Card className="p-6">
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card className="p-5">
           <CardTitle icon={IconGauge}>Compliance Health</CardTitle>
           <ComplianceGauges items={[{ label: "Lots verified", value: 89, color: "#1F5B3A" }, { label: "Inspection pass rate", value: 84, color: "#4F8A66" }, { label: "Licences valid", value: 93, color: "#E8792B" }]} />
         </Card>
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconFilter}>Inspection Pipeline</CardTitle>
           <InspectionFunnel stages={[{ label: "Requested", value: 24 }, { label: "Scheduled", value: 20 }, { label: "Inspected", value: 17 }, { label: "Approved", value: 15 }, { label: "Certified", value: 12 }]} />
         </Card>
       </div>
 
-      <Card className="p-6">
+      <Card className="p-5">
         <CardTitle icon={IconFlame}>Extraction Activity by Site (kg / day)</CardTitle>
         <ExtractionHeatmap sites={["Kigali Gold Mine", "Musanze Mine", "Nyabihu Mine", "Ruhango Mine", "Gatumba Mine", "Rusizi Site"]} />
       </Card>

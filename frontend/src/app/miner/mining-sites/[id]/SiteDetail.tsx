@@ -121,7 +121,7 @@ export function SiteDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-5 xl:grid-cols-5">
         {[
           { icon: IconRuler, label: "Total area", value: `${site.areaHa} ha` },
           { icon: IconUsers, label: "Workers", value: `${activeWorkers} active`, sub: `${workers.length} total` },
@@ -144,7 +144,7 @@ export function SiteDetail() {
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
         <Card className="pt-5">
-          <div className="flex items-center justify-between border-b border-gray-100 px-6">
+          <div className="flex items-center justify-between border-b border-gray-100 px-5">
             <div className="flex gap-7">
               {tabs.map((t) => (
                 <button
@@ -163,7 +163,7 @@ export function SiteDetail() {
             </button>
           </div>
 
-          <div className="overflow-x-auto px-3 pb-3">
+          <div className="overflow-x-auto px-2 pb-3">
             {tab === "workers" &&
               (workers.length === 0 ? (
                 <Empty>No workers assigned to this site yet.</Empty>

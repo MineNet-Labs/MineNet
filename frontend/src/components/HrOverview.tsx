@@ -30,7 +30,7 @@ export function HrOverview() {
         <StatCard deltaDir="none" icon={IconQrcode} tone="gray" label="Access setup pending" value={setup.length} delta="" note="workers" spark={[2, 1, 2, 1, 1, 1, 1]} />
       </div>
       <div className="grid items-start gap-5 xl:grid-cols-3">
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconCash} iconClass="text-[#1F5B3A]" action={<ViewAll href="/miner/payroll" />}>Payroll</CardTitle>
           {hasRun ? (
             <p className="mt-4 text-sm">{MONTHS[Number(month.slice(5)) - 1]} payroll is prepared ({payruns.find((r) => r.month === month)?.status}).</p>
@@ -39,7 +39,7 @@ export function HrOverview() {
           )}
           {latestRun && <p className="mt-2 text-xs text-ink/60">Last run {latestRun.id}: RWF {fmtNum(latestRun.lines.reduce((n, l) => n + l.net, 0))} · {latestRun.status}</p>}
         </Card>
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconBeach} iconClass="text-violet" action={<ViewAll href="/miner/leave" />}>Leave requests</CardTitle>
           <ul className="mt-4 space-y-2 text-sm">
             {pendingLeave.map((l) => (
@@ -48,7 +48,7 @@ export function HrOverview() {
             {pendingLeave.length === 0 && <li className="text-ink/60">Nothing to decide.</li>}
           </ul>
         </Card>
-        <Card className="p-6">
+        <Card className="p-5">
           <CardTitle icon={IconQrcode} iconClass="text-accent" action={<ViewAll href="/miner/workers" />}>Needs QR access</CardTitle>
           <ul className="mt-4 space-y-2 text-sm">
             {setup.map((w) => (

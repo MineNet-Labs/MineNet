@@ -61,7 +61,7 @@ function FinanceTile({
   const t = tileTones[tone];
   const Arrow = up ? IconArrowUp : IconArrowDown;
   return (
-    <Card className="p-4">
+    <Card className="p-5">
       <div className="flex items-start justify-between">
         <span className={`grid size-11 place-items-center rounded-full ${t.chip}`}><Icon className="size-5" stroke={2} /></span>
         <Sparkline values={spark} color={t.line} width={88} height={40} />
@@ -134,7 +134,7 @@ export default function PaymentsPage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <FinanceTile icon={IconTrendingUp} tone="green" label="Total Income" currency="RWF" value={millions(income)} delta="+14%" up good spark={[3, 4, 3.5, 5, 4.5, 6, 8]} />
         <FinanceTile icon={IconTrendingDown} tone="orange" label="Total Expenses" currency="RWF" value={millions(expenses)} delta="+6%" up={false} good={false} spark={[3, 5, 3.5, 6, 4, 7, 5]} />
         <FinanceTile icon={IconClock} tone="orange" label="Pending Payments" currency="RWF" value={millions(pending)} delta="-9%" up={false} good={false} spark={[3, 7, 4, 6, 3.5, 4, 3]} />
@@ -151,8 +151,8 @@ export default function PaymentsPage() {
 
       {can.finance(me.role) && <EscrowCard />}
 
-      <Card className="overflow-hidden pt-6">
-        <div className="flex items-center justify-between px-6">
+      <Card className="overflow-hidden pt-5">
+        <div className="flex items-center justify-between px-5">
           <h3 className="flex items-center gap-3 font-sans text-lg font-semibold"><IconArrowsExchange className="size-6 text-accent" stroke={1.9} /> Transactions</h3>
           <div className="flex gap-2">
             <FilterSelect label="All statuses" options={[...new Set(list.map((t) => t.status))]} value={status} onChange={setStatus} />
@@ -196,7 +196,7 @@ export default function PaymentsPage() {
           ))}
         </div>
 
-        <div className="overflow-x-auto px-3">
+        <div className="overflow-x-auto px-2">
           {page.length === 0 ? (
             <Empty>No transactions match these filters.</Empty>
           ) : (

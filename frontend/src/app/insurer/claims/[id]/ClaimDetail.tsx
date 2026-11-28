@@ -43,7 +43,7 @@ export function ClaimDetail() {
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_380px]">
         <div className="space-y-5">
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconAlertTriangle} iconClass="text-danger">Claim</CardTitle>
             <p className="mt-4 rounded-xl bg-page px-4 py-3 text-[15px]">{c.reason}</p>
             <div className="mt-5">
@@ -59,7 +59,7 @@ export function ClaimDetail() {
               />
             </div>
           </Card>
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle icon={IconRoute} iconClass="text-[#B5551A]">Lot events during cover</CardTitle>
             <ul className="mt-4 space-y-3 text-sm">
               {events.map((e) => (
@@ -71,12 +71,12 @@ export function ClaimDetail() {
         </div>
         <div className="space-y-5">
           {lot && (
-            <Card className="p-6">
+            <Card className="p-5">
               <CardTitle>Where the lot is</CardTitle>
               <p className="mt-3 text-sm">{lotCustody(state, lot).state} · {lotCustody(state, lot).place}</p>
             </Card>
           )}
-          <Card className="p-6">
+          <Card className="p-5">
             <CardTitle>Safety record at origin site</CardTitle>
             <ul className="mt-3 space-y-2 text-sm">
               {incidents.map((i) => <li key={i.id} className="rounded-xl bg-page px-3 py-2">{i.date} · {i.kind} · {i.severity}</li>)}

@@ -12,7 +12,7 @@ export function AnomalyCard({ limit = 5 }: { limit?: number }) {
   const state = useStore((s) => s);
   const flags = useMemo(() => anomalies(state), [state]);
   return (
-    <Card className="p-6">
+    <Card className="p-5">
       <CardTitle icon={IconSparkles} iconClass="text-violet">Anomaly alerts</CardTitle>
       <p className="mt-1 text-xs text-ink/60">Grades, quantities and licences that don&apos;t fit your history. Review before an inspector or buyer does.</p>
       {flags.length === 0 ? (
