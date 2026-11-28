@@ -37,7 +37,10 @@ library PassportLib {
         FlagResolved,
         Frozen,
         Unfrozen,
-        Correction
+        Correction,
+        Lien, // a financier took the lot as collateral ({LotFinance})
+        LienReleased, // the lien was repaid, settled from a sale or released by the financier
+        Insured // an insurer bound cover on the lot
     }
 
     /**
@@ -232,6 +235,12 @@ library PassportLib {
      * @param enabled Whether it may lock lots.
      */
     event LockerSet(address indexed locker, bool enabled);
+
+    /**
+     * @notice Emitted when the admin sets the lot-finance contract ({LotFinance}).
+     * @param financing The lot-finance contract.
+     */
+    event FinancingSet(address indexed financing);
 
     /**
      * @notice Emitted when the escrow locks or unlocks a lot.
@@ -441,4 +450,29 @@ library PassportLib {
      * @param inspector The inspector.
      */
     error LotPassport__NotAssignedInspector(uint256 tokenId, address inspector);
+
+    /**
+     * @notice The caller is not the lot-finance contract.
+     * @param account The caller.
+     */
+    error LotPassport__NotFinancing(address account);
+
+    /**
+     * @notice The lot-finance contract is already set and cannot be replaced.
+     * @param financing The current lot-finance contract.
+     */
+    error LotPassport__FinancingAlreadySet(address financing);
+
+    /**
+     * @notice Lot `tokenId` is collateral for a lien: it moves to a new owner only through an escrow sale that
+     * repays the financier, and it cannot be processed or committed to another trade.
+     * @param tokenId The lot.
+     */
+    error LotPassport__LotEncumbered(uint256 tokenId);
+
+    /**
+     * @notice `eventType` cannot be recorded through the finance hook.
+     * @param eventType The event type.
+     */
+    error LotPassport__InvalidFinanceEvent(EventType eventType);
 }

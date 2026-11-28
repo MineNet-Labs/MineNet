@@ -26,6 +26,17 @@ createListing ─▶ buyListing ─▶ EscrowManager.openOrder (lot locked, paym
   the seller's passport approval to the escrow as consent, so only the escrow can transfer it.
 - **Certificates are required.** Lots must hold the configured certificates (e.g. EXPORT_PERMIT, CONFLICT_FREE)
   both to be sold and to settle.
+- **Partial fills.** A buy request can be filled by several lots, each weighing at least `minQty`. The deposit
+  for the rest stays locked; the request closes once less than `minQty` is left.
+- **Auto-split.** The company approves an order by claiming it with one of its lots. A lot bigger than what is
+  left of the order is split automatically (`SupplyChain.splitLot`): exactly the remaining amount is sold as a
+  new inspected lot and the rest stays with the seller. The site manager then dispatches the sold lot
+  (`DeliveryManager.dispatch`).
+- **Negotiated sales.** Offers and counter-offers happen off-chain. The final terms are signed by one party
+  (EIP-712, or EIP-1271 for a contract wallet) and submitted by the other (`acceptOffer`), which pulls the price
+  from the buyer and opens the escrow order. Each signer nonce works once and can be cancelled (`cancelOfferNonce`).
+- **Pledged lots.** A lot under a lien (`LotFinance`) sells only in the loan's token and for enough to repay the
+  financier, who is paid first at settlement.
 - **Snapshots at opening.** The fee (max 5%), dispute window and grade at sale are fixed when the order opens.
 
 ## Decentralised disputes

@@ -87,6 +87,46 @@ library DeliveryLib {
     }
 
     /**
+     * @notice What a dispatcher supplies to send lots with their transport details.
+     * @param tokenIds Lots to ship (1 to {DeliveryManager-MAX_LOTS_PER_SHIPMENT}, no duplicates).
+     * @param carrier Authorised carrier (`CARRY`), e.g. the transporter.
+     * @param consignee Verified receiver (`RECEIVE_SHIPMENT`), e.g. a warehouse.
+     * @param eta Expected time of arrival; in the future.
+     * @param sealId Hash of the seal applied at dispatch; non-zero.
+     * @param routeHash Hash of the planned route / transport permit.
+     * @param plateNo Vehicle plate number (e.g. "RAD 123 A"); non-zero.
+     * @param driverRef Hashed id of the driver (national id or licence); non-zero.
+     * @param receiverRef Hashed id of the receiving worker at the consignee (zero = named later by the consignee).
+     * @param weights Weight handed over per lot, in grams, in `tokenIds` order.
+     */
+    struct DispatchInput {
+        uint256[] tokenIds;
+        address carrier;
+        address consignee;
+        uint64 eta;
+        bytes32 sealId;
+        bytes32 routeHash;
+        bytes32 plateNo;
+        bytes32 driverRef;
+        bytes32 receiverRef;
+        uint128[] weights;
+    }
+
+    /**
+     * @notice Transport details of a dispatched shipment.
+     * @param plateNo Vehicle plate number.
+     * @param driverRef Hashed id of the driver.
+     * @param receiverRef Hashed id of the receiving worker at the consignee.
+     * @param dispatchedBy Account that signed the dispatch.
+     */
+    struct Transport {
+        bytes32 plateNo;
+        bytes32 driverRef;
+        bytes32 receiverRef;
+        address dispatchedBy;
+    }
+
+    /**
      * @notice Delivery performance of a carrier.
      * @param delivered Shipments delivered.
      * @param onTime Shipments delivered by their ETA.
@@ -97,6 +137,37 @@ library DeliveryLib {
         uint32 onTime;
         uint32 exceptions;
     }
+
+    /**
+     * @notice Emitted when lots are dispatched with their transport details (the signed physical handover).
+     * @param shipmentId Shipment id.
+     * @param dispatchedBy Custodian or site staff (manager) who signed the dispatch.
+     * @param plateNo Vehicle plate number.
+     * @param driverRef Hashed id of the driver.
+     * @param receiverRef Hashed id of the receiving worker at the consignee (zero = named later).
+     * @param weights Weight handed over per lot, in grams, in the shipment's lot order.
+     */
+    event Dispatched(
+        uint256 indexed shipmentId,
+        address indexed dispatchedBy,
+        bytes32 plateNo,
+        bytes32 driverRef,
+        bytes32 receiverRef,
+        uint128[] weights
+    );
+
+    /**
+     * @notice Emitted when the consignee names the worker receiving a shipment.
+     * @param shipmentId Shipment id.
+     * @param receiverRef Hashed id of the receiving worker.
+     */
+    event ReceiverNamed(uint256 indexed shipmentId, bytes32 receiverRef);
+
+    /**
+     * @notice Emitted when the admin sets the staff directory.
+     * @param staffDirectory The directory (zero = staff dispatch disabled).
+     */
+    event StaffDirectorySet(address staffDirectory);
 
     /**
      * @notice Emitted when a shipment is booked.
@@ -259,6 +330,11 @@ library DeliveryLib {
      * @param account The account.
      */
     error DeliveryManager__Unauthorized(address account);
+
+    /**
+     * @notice A dispatch needs the vehicle plate, the driver and one weight per lot.
+     */
+    error DeliveryManager__InvalidTransport();
 
     /**
      * @notice Shipment `shipmentId` is on hold.

@@ -27,6 +27,23 @@ interface ISiteRegistry {
     function orgOfSite(uint256 siteId) external view returns (bytes32 orgId);
 
     /**
+     * @notice Draws `quantity` of `mineralType` from a site's recorded, not yet lotted extraction.
+     * @dev Only the lot passport, when a lot is registered. Reverts if the site has not recorded enough extraction.
+     * @param siteId Mine site id.
+     * @param mineralType Mineral identifier.
+     * @param quantity Quantity, in grams.
+     */
+    function consumeExtraction(uint256 siteId, bytes32 mineralType, uint128 quantity) external;
+
+    /**
+     * @notice A site's recorded extraction of a mineral and how much of it has been lotted.
+     * @param siteId Mine site id.
+     * @param mineralType Mineral identifier.
+     * @return The production record.
+     */
+    function productionOf(uint256 siteId, bytes32 mineralType) external view returns (SiteLib.Production memory);
+
+    /**
      * @notice Returns a site's state.
      * @param siteId Mine site id.
      * @return The site (all fields zero if unknown).
@@ -39,4 +56,21 @@ interface ISiteRegistry {
      * @return The location (all fields zero / empty if unknown).
      */
     function getSiteLocation(uint256 siteId) external view returns (SiteLib.SiteLocation memory);
+
+    /**
+     * @notice Records output verified by the company's inspector; it counts toward extraction and its ceiling.
+     * @dev Only the {SiteOperations} contract.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param quantity Verified quantity, in grams.
+     * @param evidenceHash Hash of the approved report and inspection.
+     * @param inspector Inspector who approved it.
+     */
+    function recordVerifiedExtraction(
+        uint256 siteId,
+        bytes32 mineralType,
+        uint128 quantity,
+        bytes32 evidenceHash,
+        address inspector
+    ) external;
 }

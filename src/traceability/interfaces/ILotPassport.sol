@@ -114,6 +114,18 @@ interface ILotPassport is IERC721 {
     function moduleFlag(uint256 tokenId, address reporter, bytes32 evidenceHash) external returns (uint256 flagId);
 
     /**
+     * @notice Splits an inspected lot into inspected children of the same mineral, owner, custodian and site.
+     * @dev Only a module.
+     * @param tokenId Lot to split.
+     * @param quantities Child quantities in grams (at least 2), summing to the lot's quantity.
+     * @param splitHash Hash of the split record.
+     * @return ids Child token ids.
+     */
+    function moduleSplit(uint256 tokenId, uint128[] calldata quantities, bytes32 splitHash)
+        external
+        returns (uint256[] memory ids);
+
+    /**
      * @notice The escrow or an approved trade contract locks a lot it was approved for.
      * @param tokenId Lot.
      */
@@ -131,4 +143,25 @@ interface ILotPassport is IERC721 {
      * @param to Buyer.
      */
     function escrowTransfer(uint256 tokenId, address to) external;
+
+    /**
+     * @notice The lot-finance contract ({LotFinance}) records a lien, its release, or insurance cover on a lot.
+     * @param tokenId Lot.
+     * @param eventType `Lien`, `LienReleased` or `Insured`.
+     * @param actor Financier or insurer recorded as the event's actor.
+     * @param dataHash Hash of the loan terms, release proof or policy.
+     */
+    function recordFinancing(uint256 tokenId, PassportLib.EventType eventType, address actor, bytes32 dataHash) external;
+
+    /**
+     * @notice The lot-finance contract ({LotFinance}); zero if not set.
+     * @return The lot-finance contract.
+     */
+    function financing() external view returns (address);
+
+    /**
+     * @notice The escrow contract ({EscrowManager}).
+     * @return The escrow contract.
+     */
+    function escrow() external view returns (address);
 }

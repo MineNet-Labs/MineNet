@@ -115,7 +115,9 @@ library MarketplaceLib {
     }
 
     /**
-     * @notice A buyer's standing request for a mineral, funded upfront.
+     * @notice A buyer's standing request for a mineral, funded upfront. Several lots can fill it: each lot must
+     * weigh at least `minQty` and fit in what is left of `maxQty`; the request closes as Filled once less than
+     * `minQty` is left.
      * @param buyer Buyer.
      * @param status Current status.
      * @param minGradeBps Minimum grade, in basis points (0 = any grade).
@@ -124,12 +126,15 @@ library MarketplaceLib {
      * @param expiresAt When it expires.
      * @param mineralType Mineral wanted.
      * @param paymentToken Token the request is priced in, so the deposit never moves with FX.
-     * @param minQty Minimum quantity, in grams.
-     * @param maxQty Maximum quantity, in grams.
+     * @param minQty Minimum weight of each filling lot, in grams.
+     * @param maxQty Total quantity wanted across all fills, in grams.
+     * @param filledQty Quantity filled so far, in grams.
      * @param maxPricePerKg Maximum price, in token units per kg.
-     * @param lockedAmount Deposit locked: `maxPricePerKg x maxQty`, rounded up.
-     * @param orderId Escrow order once filled.
-     * @param filledTokenId Lot that filled it.
+     * @param lockedAmount Deposit still locked: `maxPricePerKg x (maxQty - filledQty)`, rounded up (0 once
+     * closed).
+     * @param orderId Escrow order of the latest fill.
+     * @param filledTokenId Lot of the latest fill.
+     * @param fills Number of fills.
      * @param termsHash Hash of the off-chain terms.
      */
     struct BuyRequest {
@@ -143,10 +148,37 @@ library MarketplaceLib {
         IERC20 paymentToken;
         uint128 minQty;
         uint128 maxQty;
+        uint128 filledQty;
+        uint32 fills;
         uint256 maxPricePerKg;
         uint256 lockedAmount;
         uint256 orderId;
         uint256 filledTokenId;
+        bytes32 termsHash;
+    }
+
+    /**
+     * @notice A sale agreed off-chain (offers and counter-offers), signed by one party (EIP-712) and submitted by
+     * the other with {Marketplace-acceptOffer}.
+     * @param tokenId Lot sold.
+     * @param seller Seller (the lot's owner).
+     * @param buyer Buyer.
+     * @param paymentToken Settlement token.
+     * @param amount Total price, in token units.
+     * @param deliveryWindow Seconds the seller has to deliver.
+     * @param deadline Last moment the offer can be accepted.
+     * @param nonce Signer's nonce; each can be used or cancelled once.
+     * @param termsHash Hash of the off-chain terms (the negotiation thread's final message).
+     */
+    struct Offer {
+        uint256 tokenId;
+        address seller;
+        address buyer;
+        IERC20 paymentToken;
+        uint256 amount;
+        uint32 deliveryWindow;
+        uint64 deadline;
+        uint256 nonce;
         bytes32 termsHash;
     }
 
@@ -282,6 +314,17 @@ library MarketplaceLib {
     );
 
     /**
+     * @notice Emitted when a lot bigger than what is left of a buy request is split to fill it.
+     * @param requestId Buy request.
+     * @param parentId Lot split (now consumed).
+     * @param soldId New lot sold to the buyer.
+     * @param weight Weight sold, in grams.
+     */
+    event LotSplitForRequest(
+        uint256 indexed requestId, uint256 indexed parentId, uint256 indexed soldId, uint128 weight
+    );
+
+    /**
      * @notice Emitted when a seller fills a buy request with a lot.
      * @param requestId Request id.
      * @param tokenId Lot.
@@ -307,6 +350,31 @@ library MarketplaceLib {
      * @param refund Deposit credited back to the buyer.
      */
     event BuyRequestCancelled(uint256 indexed requestId, uint256 refund);
+
+    /**
+     * @notice Emitted when a signed offer is accepted and its order opened.
+     * @param offerHash EIP-712 digest of the offer.
+     * @param tokenId Lot.
+     * @param seller Seller.
+     * @param buyer Buyer.
+     * @param amount Amount moved into escrow.
+     * @param orderId Escrow order.
+     */
+    event OfferAccepted(
+        bytes32 indexed offerHash,
+        uint256 indexed tokenId,
+        address indexed seller,
+        address buyer,
+        uint256 amount,
+        uint256 orderId
+    );
+
+    /**
+     * @notice Emitted when an account cancels one of its offer nonces.
+     * @param account The signer.
+     * @param nonce Cancelled nonce.
+     */
+    event OfferNonceCancelled(address indexed account, uint256 nonce);
 
     /**
      * @notice Emitted when an account withdraws its credited balance.
@@ -485,6 +553,30 @@ library MarketplaceLib {
      * @notice The caller has no balance to withdraw.
      */
     error Marketplace__NothingToWithdraw();
+
+    /**
+     * @notice The caller is neither the offer's buyer nor its seller.
+     * @param account The caller.
+     */
+    error Marketplace__NotOfferParty(address account);
+
+    /**
+     * @notice The offer's deadline has passed.
+     * @param deadline The deadline.
+     */
+    error Marketplace__OfferExpired(uint64 deadline);
+
+    /**
+     * @notice The signer's nonce was already used or cancelled.
+     * @param signer The signer.
+     * @param nonce The nonce.
+     */
+    error Marketplace__NonceUsed(address signer, uint256 nonce);
+
+    /**
+     * @notice The signature is not the other party's.
+     */
+    error Marketplace__InvalidSignature();
 
     /**
      * @notice Grams per kilogram.

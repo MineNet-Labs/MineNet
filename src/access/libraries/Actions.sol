@@ -104,13 +104,23 @@ library Actions {
     bytes32 internal constant ACCREDIT = keccak256("ACCREDIT");
 
     /**
+     * @notice Finance a lot and hold a lien on it ({LotFinance}).
+     */
+    bytes32 internal constant FINANCE_LOT = keccak256("FINANCE_LOT");
+
+    /**
+     * @notice Bind insurance cover on a lot ({LotFinance}).
+     */
+    bytes32 internal constant INSURE_LOT = keccak256("INSURE_LOT");
+
+    /**
      * @notice The default action-to-roles table, installed by {MineNetRegistry} at deployment.
      * @return actions Every action, in a fixed order.
      * @return roles For each entry of `actions`, the roles allowed to perform it.
      */
     function defaults() internal pure returns (bytes32[] memory actions, bytes32[][] memory roles) {
-        actions = new bytes32[](18);
-        roles = new bytes32[][](18);
+        actions = new bytes32[](20);
+        roles = new bytes32[][](20);
 
         actions[0] = REGISTER_LOT;
         roles[0] = _one(Roles.MINER);
@@ -186,6 +196,12 @@ library Actions {
         // accreditation bodies (ICGLR Audit Committee, RMI, ICPAR) accredit auditors and review their reports
         actions[17] = ACCREDIT;
         roles[17] = _one(Roles.ACCREDITOR);
+
+        // licensed lenders and insurers (BNR) finance and insure lots
+        actions[18] = FINANCE_LOT;
+        roles[18] = _one(Roles.FINANCIER);
+        actions[19] = INSURE_LOT;
+        roles[19] = _one(Roles.INSURER);
     }
 
     /**

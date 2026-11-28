@@ -49,12 +49,47 @@ contract CertificateRegistry is ICertificateRegistry {
     mapping(uint256 tokenId => mapping(bytes32 certType => uint256 certId)) public latestCertificate;
 
     /**
+     * @notice The contract allowed to link split lots to their parent ({SupplyChain}; zero = none).
+     */
+    address public splitter;
+
+    /**
+     * @notice The lot a split lot was cut from (zero = not a split lot). A split lot without its own certificate
+     * of a type is covered by its parent's.
+     */
+    mapping(uint256 tokenId => uint256 parentId) public splitParentOf;
+
+    /**
      * @param registry_ Participant, role and permission registry.
      * @param passport_ Lot passport.
      */
     constructor(IMineNetRegistry registry_, ILotPassport passport_) {
         registry = registry_;
         passport = passport_;
+    }
+
+    /**
+     * @notice Sets the contract allowed to link split lots to their parent.
+     * @dev Only a {MineNetRegistry} admin.
+     * @param splitter_ The contract ({SupplyChain}), or zero.
+     * @custom:emits SplitterSet
+     */
+    function setSplitter(address splitter_) external {
+        if (!registry.isAdmin(msg.sender)) revert CertificateLib.CertificateRegistry__NotRegistryAdmin(msg.sender);
+        splitter = splitter_;
+        emit CertificateLib.SplitterSet(splitter_);
+    }
+
+    /**
+     * @inheritdoc ICertificateRegistry
+     * @custom:emits SplitLinked
+     */
+    function linkSplit(uint256 childId, uint256 parentId) external {
+        if (msg.sender != splitter || msg.sender == address(0)) {
+            revert CertificateLib.CertificateRegistry__NotSplitter(msg.sender);
+        }
+        splitParentOf[childId] = parentId;
+        emit CertificateLib.SplitLinked(childId, parentId);
     }
 
     /**
@@ -155,13 +190,20 @@ contract CertificateRegistry is ICertificateRegistry {
     }
 
     /**
-     * @notice Whether a lot's current certificate of `certType` is valid.
+     * @notice Whether a lot's current certificate of `certType` is valid. A split lot without its own
+     * certificate of that type is covered by the one of the lot it was cut from.
      * @param tokenId Lot.
      * @param certType Certificate type.
      * @return True if unrevoked and unexpired.
      */
     function hasValidCertificate(uint256 tokenId, bytes32 certType) public view returns (bool) {
-        return isValid(latestCertificate[tokenId][certType]);
+        uint256 certId = latestCertificate[tokenId][certType];
+        while (certId == 0) {
+            tokenId = splitParentOf[tokenId];
+            if (tokenId == 0) return false;
+            certId = latestCertificate[tokenId][certType];
+        }
+        return isValid(certId);
     }
 
     /**

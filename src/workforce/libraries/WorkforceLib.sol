@@ -248,6 +248,18 @@ library WorkforceLib {
     event CashPolicySet(uint256 cashLimitUsd, uint32 ackWindow);
 
     /**
+     * @notice Emitted when the admin sets the {SiteOperations} contract.
+     * @param siteOperations The contract (zero = hooks disabled).
+     */
+    event SiteOperationsSet(address siteOperations);
+
+    /**
+     * @notice Emitted when the admin sets the payroll engine.
+     * @param engine The engine (zero = none).
+     */
+    event PayrollEngineSet(address engine);
+
+    /**
      * @notice `account` is not an admin of {MineNetRegistry}.
      * @param account The account.
      */

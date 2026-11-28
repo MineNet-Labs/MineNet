@@ -19,7 +19,7 @@ Several accounts can act for the same organisation, and the protocol reasons abo
 For example, an inspector from the seller's own company is never "independent".
 
 **Roles vs actions.** A *role* is what a participant **is** (MINER, REFINERY, TRANSPORTER, BUYER, WAREHOUSE,
-INSPECTOR, AUDITOR, REGULATOR, ORACLE, PROCESSOR, CUSTOMS, ACCREDITOR). An *action* is what it may **do** (`REGISTER_LOT`,
+INSPECTOR, AUDITOR, REGULATOR, ORACLE, PROCESSOR, CUSTOMS, ACCREDITOR, FINANCIER, INSURER). An *action* is what it may **do** (`REGISTER_LOT`,
 `SELL_LOT`, `CARRY`, `REGULATE`, `ENTER_AGREEMENT`, `ACCREDIT`...). Contracts only ever check actions:
 
 ```solidity

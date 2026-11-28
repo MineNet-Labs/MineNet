@@ -15,6 +15,14 @@ interface ICertificateRegistry {
     function isValid(uint256 certId) external view returns (bool);
 
     /**
+     * @notice Links a split lot to the lot it was cut from, so the parent's certificates cover it.
+     * @dev Only the split linker ({SupplyChain}).
+     * @param childId Split lot.
+     * @param parentId Parent lot.
+     */
+    function linkSplit(uint256 childId, uint256 parentId) external;
+
+    /**
      * @notice Whether a lot's current certificate of `certType` is valid.
      * @param tokenId Lot.
      * @param certType Certificate type.

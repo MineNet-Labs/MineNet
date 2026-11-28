@@ -5,6 +5,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {IMineNetRegistry} from "src/access/interfaces/IMineNetRegistry.sol";
 import {ILotPassport} from "src/traceability/interfaces/ILotPassport.sol";
 import {ISupplyChain} from "src/traceability/interfaces/ISupplyChain.sol";
@@ -32,14 +34,25 @@ import {CurrencyLib} from "src/finance/libraries/CurrencyLib.sol";
  *   against repricing and exchange-rate moves.
  *
  * Buy requests (reverse market): {createBuyRequest}, {claimBuyRequest} and {cancelBuyRequest}, priced in the
- * payment token.
+ * payment token. A request can be filled by several lots until less than its minimum lot weight is left.
+ *
+ * Negotiated sales: offers and counter-offers happen off-chain; the final terms are signed by one party (EIP-712,
+ * EIP-1271 for contract wallets) and submitted by the other ({acceptOffer}), which opens the escrow order. Each
+ * signer nonce works once and can be cancelled ({cancelOfferNonce}).
  *
  * The lot stays in the seller's wallet while listed; a sale locks it inside {EscrowManager} (which is why sellers
  * approve the escrow on the passport). Payment, delivery, settlement and decentralised disputes all happen in
  * {EscrowManager}. Types, events, errors and pricing maths live in {MarketplaceLib}.
  */
-contract Marketplace is ReentrancyGuardTransient, Pausable {
+contract Marketplace is ReentrancyGuardTransient, Pausable, EIP712 {
     using SafeERC20 for IERC20;
+
+    /**
+     * @notice EIP-712 type hash of {MarketplaceLib-Offer}.
+     */
+    bytes32 public constant OFFER_TYPEHASH = keccak256(
+        "Offer(uint256 tokenId,address seller,address buyer,address paymentToken,uint256 amount,uint32 deliveryWindow,uint64 deadline,uint256 nonce,bytes32 termsHash)"
+    );
 
     /**
      * @notice Participant, role and permission registry.
@@ -102,6 +115,11 @@ contract Marketplace is ReentrancyGuardTransient, Pausable {
     mapping(IERC20 token => mapping(address account => uint256)) public claimable;
 
     /**
+     * @notice Offer nonces each signer has used or cancelled.
+     */
+    mapping(address signer => mapping(uint256 nonce => bool)) public nonceUsed;
+
+    /**
      * @param registry_ Participant, role and permission registry.
      * @param passport_ Lot passport.
      * @param supplyChain_ Supply-chain ledger.
@@ -114,7 +132,7 @@ contract Marketplace is ReentrancyGuardTransient, Pausable {
         ISupplyChain supplyChain_,
         IEscrowManager escrow_,
         ICurrencyManager currencies_
-    ) {
+    ) EIP712("MineNet Marketplace", "1") {
         registry = registry_;
         passport = passport_;
         supplyChain = supplyChain_;
@@ -360,6 +378,8 @@ contract Marketplace is ReentrancyGuardTransient, Pausable {
             paymentToken: p.paymentToken,
             minQty: p.minQty,
             maxQty: p.maxQty,
+            filledQty: 0,
+            fills: 0,
             maxPricePerKg: p.maxPricePerKg,
             lockedAmount: locked,
             orderId: 0,
@@ -382,14 +402,19 @@ contract Marketplace is ReentrancyGuardTransient, Pausable {
     }
 
     /**
-     * @notice Fills an open buy request with a lot the caller owns.
+     * @notice Fills an open buy request, fully or in part, with a lot the caller owns. Claiming is the company's
+     * approval of the order. A lot bigger than what is left of the order is split automatically: exactly the
+     * remaining amount is sold and the rest stays with the seller as a new inspected lot.
      * @dev The caller needs `SELL_LOT` and the lot must be sellable. The lot must match the mineral, its trusted
-     * weight must fall in the requested range and its latest attested grade must meet the minimum. Any live listing
-     * of the lot is closed, and the unused deposit is credited back to the buyer.
+     * weight must be at least `minQty` (a heavier lot is split, see {SupplyChain-splitLot}), and its latest
+     * attested grade must meet the minimum. Any live listing of the lot is closed. The deposit for the rest of the request stays locked; the
+     * unused part of this fill's share is credited back to the buyer, and once less than `minQty` is left the
+     * request closes as Filled and the whole remainder is credited back.
      * @param requestId Request id.
      * @param tokenId Lot.
      * @param pricePerKg Price, in token units per kg; non-zero and at most the buyer's maximum.
      * @return orderId The {EscrowManager} order.
+     * @custom:emits LotSplitForRequest (when the lot is split)
      * @custom:emits BuyRequestClaimed
      */
     function claimBuyRequest(uint256 requestId, uint256 tokenId, uint256 pricePerKg)
@@ -418,19 +443,39 @@ contract Marketplace is ReentrancyGuardTransient, Pausable {
             revert MarketplaceLib.Marketplace__MineralMismatch(r.mineralType, lot.mineralType);
         }
         uint128 weight = supplyChain.lastWeight(tokenId);
-        if (weight < r.minQty || weight > r.maxQty) {
-            revert MarketplaceLib.Marketplace__WeightOutOfRange(weight, r.minQty, r.maxQty);
-        }
+        uint128 remaining = r.maxQty - r.filledQty;
+        if (weight < r.minQty) revert MarketplaceLib.Marketplace__WeightOutOfRange(weight, r.minQty, remaining);
         if (r.minGradeBps != 0) {
             uint16 grade = supplyChain.latestGrade(tokenId).gradeBps;
             if (grade < r.minGradeBps) revert MarketplaceLib.Marketplace__GradeTooLow(grade, r.minGradeBps);
         }
+        if (weight > remaining) {
+            // the batch is bigger than what is left of the order: split off exactly that amount and sell it
+            uint256 listed = listingOf[tokenId];
+            if (listed != 0 && _listings[listed].status == MarketplaceLib.ListingStatus.Active) {
+                _closeListing(listed, _listings[listed]);
+            }
+            uint128[] memory parts = new uint128[](2);
+            parts[0] = remaining;
+            parts[1] = weight - remaining;
+            uint256 parent = tokenId;
+            tokenId = supplyChain.splitLot(parent, parts, keccak256(abi.encode("MINENET_ORDER", requestId)))[0];
+            weight = remaining;
+            emit MarketplaceLib.LotSplitForRequest(requestId, parent, tokenId, remaining);
+        }
 
         uint256 total = MarketplaceLib.claimTotal(pricePerKg, weight);
         if (total == 0) revert MarketplaceLib.Marketplace__InvalidPrice();
-        uint256 refund = r.lockedAmount - total; // total <= locked: pricePerKg <= max and weight <= maxQty
+        // What stays locked covers the rest at the maximum price. floor(P x w) + ceil(P x (R - w)) <= ceil(P x R),
+        // so `total + keep` never exceeds the deposit.
+        uint128 left = remaining - weight;
+        uint256 keep = left >= r.minQty ? MarketplaceLib.requestDeposit(r.maxPricePerKg, left) : 0;
+        uint256 refund = r.lockedAmount - total - keep;
 
-        r.status = MarketplaceLib.RequestStatus.Filled;
+        r.lockedAmount = keep;
+        r.filledQty += weight;
+        r.fills += 1;
+        if (keep == 0) r.status = MarketplaceLib.RequestStatus.Filled;
         r.filledTokenId = tokenId;
         uint256 listingId = listingOf[tokenId];
         if (listingId != 0 && _listings[listingId].status == MarketplaceLib.ListingStatus.Active) {
@@ -454,8 +499,84 @@ contract Marketplace is ReentrancyGuardTransient, Pausable {
         emit MarketplaceLib.BuyRequestClaimed(requestId, tokenId, seller, pricePerKg, total, refund, orderId);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                      NEGOTIATED SALES (SIGNED OFFERS)
+    //////////////////////////////////////////////////////////////*/
+
     /**
-     * @notice Withdraws an unfilled request (open or expired) and returns the deposit.
+     * @notice Accepts a sale the other party signed: the buyer submits a seller-signed offer, or the seller a
+     * buyer-signed one. The price is pulled from the buyer into escrow and the order opened.
+     * @dev The caller must be the offer's buyer or seller; the other party must have signed it (EIP-712, or
+     * EIP-1271 for a contract wallet) and its nonce must be unused. The buyer needs `BUY_LOT` and must have
+     * approved this contract for `amount`; the seller needs `SELL_LOT` and the lot must be sellable. Any live listing
+     * of the lot is closed.
+     * @param o The offer.
+     * @param signature The other party's signature over {hashOffer}.
+     * @return orderId The {EscrowManager} order.
+     * @custom:emits OfferAccepted
+     */
+    function acceptOffer(MarketplaceLib.Offer calldata o, bytes calldata signature)
+        external
+        nonReentrant
+        whenNotPaused
+        returns (uint256 orderId)
+    {
+        address signer;
+        if (msg.sender == o.buyer) signer = o.seller;
+        else if (msg.sender == o.seller) signer = o.buyer;
+        else revert MarketplaceLib.Marketplace__NotOfferParty(msg.sender);
+        if (o.buyer == o.seller) revert MarketplaceLib.Marketplace__SelfTrade();
+        if (block.timestamp > o.deadline) revert MarketplaceLib.Marketplace__OfferExpired(o.deadline);
+        if (nonceUsed[signer][o.nonce]) revert MarketplaceLib.Marketplace__NonceUsed(signer, o.nonce);
+        bytes32 digest = hashOffer(o);
+        if (!SignatureChecker.isValidSignatureNow(signer, digest, signature)) {
+            revert MarketplaceLib.Marketplace__InvalidSignature();
+        }
+        nonceUsed[signer][o.nonce] = true;
+
+        _requireAction(o.buyer, Actions.BUY_LOT, true);
+        _requireAction(o.seller, Actions.SELL_LOT, false);
+        _requireSellable(o.tokenId, o.seller);
+        if (!currencies.isSettlementToken(o.paymentToken)) {
+            revert MarketplaceLib.Marketplace__TokenNotAllowed(o.paymentToken);
+        }
+        if (o.amount == 0) revert MarketplaceLib.Marketplace__InvalidPrice();
+
+        uint256 listingId = listingOf[o.tokenId];
+        if (listingId != 0 && _listings[listingId].status == MarketplaceLib.ListingStatus.Active) {
+            _closeListing(listingId, _listings[listingId]);
+        }
+
+        o.paymentToken.safeTransferFrom(o.buyer, address(this), o.amount);
+        o.paymentToken.forceApprove(address(escrow), o.amount);
+        orderId = escrow.openOrder(
+            EscrowLib.OpenParams({
+                tokenId: o.tokenId,
+                buyer: o.buyer,
+                seller: o.seller,
+                paymentToken: o.paymentToken,
+                amount: o.amount,
+                deliveryWindow: o.deliveryWindow,
+                termsHash: o.termsHash
+            })
+        );
+        emit MarketplaceLib.OfferAccepted(digest, o.tokenId, o.seller, o.buyer, o.amount, orderId);
+    }
+
+    /**
+     * @notice Cancels one of the caller's offer nonces, so an offer it signed with it can no longer be accepted.
+     * @param nonce The nonce.
+     * @custom:emits OfferNonceCancelled
+     */
+    function cancelOfferNonce(uint256 nonce) external {
+        if (nonceUsed[msg.sender][nonce]) revert MarketplaceLib.Marketplace__NonceUsed(msg.sender, nonce);
+        nonceUsed[msg.sender][nonce] = true;
+        emit MarketplaceLib.OfferNonceCancelled(msg.sender, nonce);
+    }
+
+    /**
+     * @notice Withdraws an open or expired request and returns the deposit still locked (for a partly filled
+     * request: the part not yet filled).
      * @dev Only the buyer.
      * @param requestId Request id.
      * @custom:emits BuyRequestCancelled
@@ -588,6 +709,30 @@ contract Marketplace is ReentrancyGuardTransient, Pausable {
      */
     function requestDeposit(uint256 maxPricePerKg, uint128 maxQty) external pure returns (uint256) {
         return MarketplaceLib.requestDeposit(maxPricePerKg, maxQty);
+    }
+
+    /**
+     * @notice The EIP-712 digest a party signs for an offer.
+     * @param o The offer.
+     * @return The digest.
+     */
+    function hashOffer(MarketplaceLib.Offer calldata o) public view returns (bytes32) {
+        return _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    OFFER_TYPEHASH,
+                    o.tokenId,
+                    o.seller,
+                    o.buyer,
+                    o.paymentToken,
+                    o.amount,
+                    o.deliveryWindow,
+                    o.deadline,
+                    o.nonce,
+                    o.termsHash
+                )
+            )
+        );
     }
 
     /**

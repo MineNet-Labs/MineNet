@@ -45,6 +45,15 @@ recorded as the regulator's own organisation, so it can't be misstated. Reminder
    - a site whose inspection is overdue shows up in `overdueSafetySites`;
    - closure requires a passing inspection and a rehabilitation certificate.
 
+**Production.** The holder (or staff with `RECORD_PRODUCTION`) records extraction per site and mineral
+(`recordExtraction`) while the site can produce. Every lot registered on the passport draws on that balance
+(`consumeExtraction`, passport only), so lotted ≤ extracted always holds. Over-recorded extraction that has not been
+lotted can be reduced by the holder or a regulator (`reduceExtraction`). `productionOf` shows both totals.
+Site output normally arrives through **inspected shift reports**: when the company's internal inspector approves a
+shift log in `SiteOperations`, the weighed quantity is recorded here (`recordVerifiedExtraction`, `SiteOperations`
+only) and becomes official inventory to register lots from. A regulator can set a **licensed extraction ceiling** per
+site and mineral (`setExtractionCeiling`); recorded extraction can never exceed it.
+
 **Reserves.** Holders declare estimated deposits per mineral; independent inspectors or regulators verify them.
 
 **Certificates.** The admin chooses which role issues each type (`configureCertType`). Certificates expire and can be

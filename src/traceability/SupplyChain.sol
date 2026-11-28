@@ -7,6 +7,7 @@ import {IMineNetRegistry} from "src/access/interfaces/IMineNetRegistry.sol";
 import {ILotPassport} from "src/traceability/interfaces/ILotPassport.sol";
 import {ICertificateRegistry} from "src/compliance/interfaces/ICertificateRegistry.sol";
 import {IInspectionRegistry} from "src/compliance/interfaces/IInspectionRegistry.sol";
+import {IDeliveryManager} from "src/traceability/interfaces/IDeliveryManager.sol";
 import {Actions} from "src/access/libraries/Actions.sol";
 import {PassportLib} from "src/traceability/libraries/PassportLib.sol";
 import {SupplyChainLib} from "src/traceability/libraries/SupplyChainLib.sol";
@@ -115,6 +116,17 @@ contract SupplyChain is Pausable, ISupplyChain {
     mapping(uint256 tokenId => SupplyChainLib.Grade) private _grades;
 
     /**
+     * @notice The grade a lot's owner declared before inspection, in basis points (0 = none declared).
+     */
+    mapping(uint256 tokenId => uint16 gradeBps) public declaredGradeOf;
+
+    /**
+     * @notice How far an attested grade may differ from the declared grade (default 3 percentage points), in
+     * basis points of grade, before a {SupplyChainLib-GradeDiscrepancy} is emitted.
+     */
+    uint16 public gradeDiscrepancyBps = 300;
+
+    /**
      * @notice Whether an inspector or customs agent is assigned to a lot.
      */
     mapping(uint256 tokenId => mapping(address account => bool)) public isAssigned;
@@ -129,6 +141,16 @@ contract SupplyChain is Pausable, ISupplyChain {
      * @dev Lot => inspector => assigned by the platform (cannot be removed by the owner or custodian).
      */
     mapping(uint256 tokenId => mapping(address account => bool)) private _platformAssigned;
+
+    /**
+     * @notice Contracts that may split a lot for its owner ({Marketplace}, when a lot fills part of an order).
+     */
+    mapping(address splitter => bool) public isSplitter;
+
+    /**
+     * @notice Shipments, so a lot booked on an open shipment is never split (zero = not checked).
+     */
+    IDeliveryManager public deliveryManager;
 
     /**
      * @notice Organisation of the customs authority (e.g. the Rwanda Revenue Authority) whose oracle accounts relay
@@ -190,6 +212,18 @@ contract SupplyChain is Pausable, ISupplyChain {
     }
 
     /**
+     * @notice Sets how far an attested grade may differ from the declared one before a discrepancy is reported.
+     * @dev Only a {MineNetRegistry} admin.
+     * @param thresholdBps Threshold, in basis points of grade; in `(0, 10_000]`.
+     * @custom:emits GradeDiscrepancyThresholdUpdated
+     */
+    function setGradeDiscrepancyThreshold(uint16 thresholdBps) external onlyAdmin {
+        if (thresholdBps == 0 || thresholdBps > 10_000) revert SupplyChainLib.SupplyChain__InvalidGrade(thresholdBps);
+        gradeDiscrepancyBps = thresholdBps;
+        emit SupplyChainLib.GradeDiscrepancyThresholdUpdated(thresholdBps);
+    }
+
+    /**
      * @notice Sets the certificates a lot needs before customs can declare it (e.g. EXPORT_PERMIT, ICGLR).
      * @dev Only a {MineNetRegistry} admin.
      * @param certTypes Certificate types.
@@ -235,6 +269,29 @@ contract SupplyChain is Pausable, ISupplyChain {
     }
 
     /**
+     * @notice Allows or disallows a contract ({Marketplace}) to split lots for their owner.
+     * @dev Only a {MineNetRegistry} admin.
+     * @param splitter Splitter contract.
+     * @param enabled Whether it may split.
+     * @custom:emits SplitterSet
+     */
+    function setSplitter(address splitter, bool enabled) external onlyAdmin {
+        isSplitter[splitter] = enabled;
+        emit SupplyChainLib.SplitterSet(splitter, enabled);
+    }
+
+    /**
+     * @notice Sets the shipment registry checked before a split.
+     * @dev Only a {MineNetRegistry} admin.
+     * @param delivery_ The {DeliveryManager}.
+     * @custom:emits DeliveryManagerSet
+     */
+    function setDeliveryManager(IDeliveryManager delivery_) external onlyAdmin {
+        deliveryManager = delivery_;
+        emit SupplyChainLib.DeliveryManagerSet(address(delivery_));
+    }
+
+    /**
      * @notice Pauses checkpoint recording, assignment and flagging.
      * @dev Only a {MineNetRegistry} admin.
      */
@@ -248,6 +305,91 @@ contract SupplyChain is Pausable, ISupplyChain {
      */
     function unpause() external onlyAdmin {
         _unpause();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          OWNER: SPLITTING A BATCH
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Splits an inspected lot by trusted weight into smaller lots that stay inspected, e.g. to sell part of
+     * a batch. Each child gets its trusted weight, a proportional baseline and registered quantity, the parent's
+     * grade and customs status, and is covered by the parent's certificates.
+     * @dev The lot's owner, or a splitter ({Marketplace}) that checked the owner's consent. The lot must be held by
+     * its owner's organisation and not be booked on an open shipment; {LotPassport-moduleSplit} applies the other
+     * rules (inspected, unfrozen, unlocked, unpledged, no pending handover).
+     * @param tokenId Lot to split.
+     * @param weights Child weights in grams (at least 2, each non-zero), summing to the lot's trusted weight.
+     * @param splitHash Hash of the split record (order reference, weighing tickets).
+     * @return ids Child token ids, in `weights` order.
+     * @custom:emits LotSplit
+     */
+    function splitLot(uint256 tokenId, uint128[] calldata weights, bytes32 splitHash)
+        external
+        whenNotPaused
+        returns (uint256[] memory ids)
+    {
+        address lotOwner = passport.ownerOf(tokenId);
+        if (msg.sender != lotOwner && !isSplitter[msg.sender]) {
+            revert SupplyChainLib.SupplyChain__NotLotOwner(msg.sender, tokenId);
+        }
+        if (!registry.sameOrg(passport.custodianOf(tokenId), lotOwner)) {
+            revert SupplyChainLib.SupplyChain__CannotSplit(tokenId);
+        }
+        IDeliveryManager dm = deliveryManager;
+        if (address(dm) != address(0) && dm.activeShipmentOf(tokenId) != 0) {
+            revert SupplyChainLib.SupplyChain__CannotSplit(tokenId);
+        }
+        uint128 total = lastWeight(tokenId);
+        uint128 base = baselineOf(tokenId);
+        uint128 qty = passport.getLot(tokenId).quantity;
+        uint256 n = weights.length;
+        uint128[] memory quantities = new uint128[](n);
+        uint256 sum;
+        uint256 qtyLeft = qty;
+        for (uint256 i; i < n; ++i) {
+            if (weights[i] == 0) revert SupplyChainLib.SupplyChain__CannotSplit(tokenId);
+            sum += weights[i];
+            quantities[i] = i + 1 == n ? uint128(qtyLeft) : uint128(uint256(qty) * weights[i] / total);
+            qtyLeft -= quantities[i];
+        }
+        if (sum != total) revert SupplyChainLib.SupplyChain__CannotSplit(tokenId);
+
+        ids = passport.moduleSplit(tokenId, quantities, splitHash);
+        SupplyChainLib.Grade memory grade = _grades[tokenId];
+        SupplyChainLib.CustomsStatus customs = customsStatus[tokenId];
+        for (uint256 i; i < n; ++i) {
+            uint256 id = ids[i];
+            _lastWeight[id] = weights[i];
+            _baseline[id] = uint128(uint256(base) * weights[i] / total);
+            if (grade.at != 0) _grades[id] = grade;
+            customsStatus[id] = customs;
+            certificates.linkSplit(id, tokenId);
+        }
+        emit SupplyChainLib.LotSplit(tokenId, ids, weights, splitHash);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         OWNER: DECLARED GRADE
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice The owner declares the grade of a newly registered lot, before any inspection, so the inspector's
+     * attested grade can be compared with it.
+     * @dev Only the lot's owner, once, while the lot is `Registered` and no grade has been attested.
+     * @param tokenId Lot.
+     * @param gradeBps Declared grade, in basis points; in `(0, 10_000]`.
+     * @custom:emits GradeDeclared
+     */
+    function declareGrade(uint256 tokenId, uint16 gradeBps) external whenNotPaused {
+        if (gradeBps == 0 || gradeBps > 10_000) revert SupplyChainLib.SupplyChain__InvalidGrade(gradeBps);
+        if (
+            passport.ownerOf(tokenId) != msg.sender
+                || passport.getLot(tokenId).status != PassportLib.LotStatus.Registered || declaredGradeOf[tokenId] != 0
+                || _grades[tokenId].at != 0
+        ) revert SupplyChainLib.SupplyChain__CannotDeclareGrade(tokenId);
+        declaredGradeOf[tokenId] = gradeBps;
+        emit SupplyChainLib.GradeDeclared(tokenId, msg.sender, gradeBps);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -690,6 +832,13 @@ contract SupplyChain is Pausable, ISupplyChain {
             _grades[tokenId] =
                 SupplyChainLib.Grade({gradeBps: input.gradeBps, at: uint64(block.timestamp), inspector: signer});
             emit SupplyChainLib.GradeAttested(tokenId, index, signer, input.gradeBps);
+            uint16 declared = declaredGradeOf[tokenId];
+            if (declared != 0) {
+                uint16 diff = declared > input.gradeBps ? declared - input.gradeBps : input.gradeBps - declared;
+                if (diff > gradeDiscrepancyBps) {
+                    emit SupplyChainLib.GradeDiscrepancy(tokenId, declared, input.gradeBps);
+                }
+            }
         }
 
         // ---- flags: one per checkpoint, weight first ----

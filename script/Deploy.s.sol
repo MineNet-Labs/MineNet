@@ -16,6 +16,8 @@ import {CurrencyLib} from "src/finance/libraries/CurrencyLib.sol";
 import {LicenceRegistry} from "src/compliance/LicenceRegistry.sol";
 import {MineSiteRegistry} from "src/compliance/MineSiteRegistry.sol";
 import {WorkforceManager} from "src/workforce/WorkforceManager.sol";
+import {SiteOperations} from "src/workforce/SiteOperations.sol";
+import {PayrollEngine} from "src/workforce/PayrollEngine.sol";
 import {LotTagRegistry} from "src/traceability/LotTagRegistry.sol";
 import {CargoTracker} from "src/traceability/CargoTracker.sol";
 import {MineralPriceOracle} from "src/finance/MineralPriceOracle.sol";
@@ -24,6 +26,7 @@ import {B2B} from "src/b2b/B2B.sol";
 import {B2BServices} from "src/b2b/B2BServices.sol";
 import {InspectionRegistry} from "src/compliance/InspectionRegistry.sol";
 import {AuditRegistry} from "src/compliance/AuditRegistry.sol";
+import {LotFinance} from "src/finance/LotFinance.sol";
 
 /**
  * @notice Deploys the full MINENET suite.
@@ -63,6 +66,8 @@ contract Deploy is Script {
         LicenceRegistry licences = new LicenceRegistry(registry);
         MineSiteRegistry sites = new MineSiteRegistry(registry, licences);
         WorkforceManager workforce = new WorkforceManager(registry, sites, currencies);
+        SiteOperations siteOps = new SiteOperations(registry, sites, workforce, currencies);
+        PayrollEngine payroll = new PayrollEngine(registry, sites, workforce, currencies, siteOps);
         LotTagRegistry tags = new LotTagRegistry(registry, passport);
         CargoTracker tracker = new CargoTracker(registry, passport, delivery);
         MineralPriceOracle prices = new MineralPriceOracle(registry);
@@ -71,6 +76,7 @@ contract Deploy is Script {
         B2BServices services = new B2BServices(registry, currencies, passport, supplyChain, delivery);
         InspectionRegistry inspections = new InspectionRegistry(registry, passport, sites, supplyChain);
         AuditRegistry audits = new AuditRegistry(registry);
+        LotFinance finance = new LotFinance(registry, passport, currencies);
 
         (, address broadcaster,) = vm.readCallers();
         bool wired = broadcaster == admin;
@@ -83,7 +89,16 @@ contract Deploy is Script {
             passport.setModule(address(tags), true);
             passport.setModule(address(tracker), true);
             passport.setSiteRegistry(sites);
+            sites.setPassport(address(passport)); // lots draw on recorded extraction
+            passport.setFinancing(address(finance)); // set once: liens and insurance cover
             sites.setStaffDirectory(workforce);
+            workforce.setSiteOperations(address(siteOps)); // site reports and hiring
+            workforce.setPayrollEngine(address(payroll)); // check-in gate and attendance-based pay
+            sites.setSiteOperations(address(siteOps)); // inspected shift output counts toward extraction
+            delivery.setStaffDirectory(workforce); // site managers dispatch their company's lots
+            supplyChain.setSplitter(address(market), true); // auto-split a batch to fill an order
+            supplyChain.setDeliveryManager(delivery); // never split a lot booked on a shipment
+            certs.setSplitter(address(supplyChain)); // split lots keep their parent's certificates
             // inspectors are assigned by the platform, never chosen by operators
             supplyChain.setInspectionAssigner(address(inspections));
             passport.setInspectionRegistry(inspections);
@@ -108,6 +123,8 @@ contract Deploy is Script {
         console.log("LicenceRegistry:    ", address(licences));
         console.log("MineSiteRegistry:   ", address(sites));
         console.log("WorkforceManager:   ", address(workforce));
+        console.log("SiteOperations:     ", address(siteOps));
+        console.log("PayrollEngine:      ", address(payroll));
         console.log("LotTagRegistry:     ", address(tags));
         console.log("CargoTracker:       ", address(tracker));
         console.log("MineralPriceOracle: ", address(prices));
@@ -116,6 +133,7 @@ contract Deploy is Script {
         console.log("B2BServices:        ", address(services));
         console.log("InspectionRegistry: ", address(inspections));
         console.log("AuditRegistry:      ", address(audits));
+        console.log("LotFinance:         ", address(finance));
 
         if (!wired) {
             console.log("\nAdmin must run:");
@@ -124,6 +142,11 @@ contract Deploy is Script {
             console.log("  supplyChain.setModule(delivery, true)");
             console.log("  passport.setModule(tags, true); passport.setModule(tracker, true)");
             console.log("  passport.setSiteRegistry(sites); sites.setStaffDirectory(workforce)");
+            console.log("  workforce.setSiteOperations(siteOps); workforce.setPayrollEngine(payroll)");
+            console.log("  sites.setSiteOperations(siteOps)  // inspected shift output counts toward extraction");
+            console.log("  delivery.setStaffDirectory(workforce); supplyChain.setSplitter(market, true)");
+            console.log("  supplyChain.setDeliveryManager(delivery); certs.setSplitter(supplyChain)");
+            console.log("  sites.setPassport(passport); passport.setFinancing(finance)  // financing: once");
             console.log("  supplyChain.setInspectionAssigner(inspections); passport.setInspectionRegistry(inspections)");
             console.log("  sites.setInspectionRegistry(inspections)");
             console.log("  escrow.setMarketplace(market)");
@@ -138,6 +161,7 @@ contract Deploy is Script {
         );
         console.log("  inspections.setVrfConfig({coordinator, keyHash, subId, ...})  // Chainlink VRF v2.5 on Base;");
         console.log("    then add the InspectionRegistry as a consumer of the VRF subscription");
+        console.log("  registry.setRoleAuthority(FINANCIER, <BNR org>); registry.setRoleAuthority(INSURER, <BNR org>)");
         console.log("  registry.setOrgPayout(<org>, <company treasury>)  // per company, from verified details");
         console.log("\nLicensing and oversight (needed before lots can be inspected or companies audited):");
         console.log("  registry.setRoleAuthority(INSPECTOR, <RMB org>); RMB regulators then call");

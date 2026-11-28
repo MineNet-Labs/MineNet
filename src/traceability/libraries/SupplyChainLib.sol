@@ -148,6 +148,29 @@ library SupplyChainLib {
     event GradeAttested(uint256 indexed tokenId, uint256 indexed index, address indexed inspector, uint16 gradeBps);
 
     /**
+     * @notice Emitted when a lot's owner declares its grade before inspection.
+     * @param tokenId Lot.
+     * @param owner Declaring owner.
+     * @param gradeBps Declared grade, in basis points.
+     */
+    event GradeDeclared(uint256 indexed tokenId, address indexed owner, uint16 gradeBps);
+
+    /**
+     * @notice Emitted when an attested grade differs from the declared grade by more than
+     * {SupplyChain-gradeDiscrepancyBps}: a signal for buyers, regulators and the anomaly model.
+     * @param tokenId Lot.
+     * @param declaredBps Grade the owner declared, in basis points.
+     * @param attestedBps Grade the inspector attested, in basis points.
+     */
+    event GradeDiscrepancy(uint256 indexed tokenId, uint16 declaredBps, uint16 attestedBps);
+
+    /**
+     * @notice Emitted when the admin sets the grade-discrepancy threshold.
+     * @param thresholdBps Threshold, in basis points of grade.
+     */
+    event GradeDiscrepancyThresholdUpdated(uint16 thresholdBps);
+
+    /**
      * @notice Emitted when a measured weight is outside tolerance; the lot is flagged.
      * @param tokenId Lot.
      * @param index Checkpoint index.
@@ -226,6 +249,28 @@ library SupplyChainLib {
      * @param enabled Whether it is trusted.
      */
     event ModuleSet(address indexed module, bool enabled);
+
+    /**
+     * @notice Emitted when a splitter contract is allowed or disallowed.
+     * @param splitter Splitter contract.
+     * @param enabled Whether it may split.
+     */
+    event SplitterSet(address indexed splitter, bool enabled);
+
+    /**
+     * @notice Emitted when the shipment registry is set.
+     * @param deliveryManager The {DeliveryManager}.
+     */
+    event DeliveryManagerSet(address deliveryManager);
+
+    /**
+     * @notice Emitted when a lot is split into smaller inspected lots.
+     * @param parentId Lot split (now consumed).
+     * @param childIds New lots.
+     * @param weights Trusted weight of each new lot, in grams.
+     * @param splitHash Hash of the split record.
+     */
+    event LotSplit(uint256 indexed parentId, uint256[] childIds, uint128[] weights, bytes32 splitHash);
 
     /**
      * @notice Emitted when the customs authority whose oracles may release goods is set.
@@ -318,6 +363,27 @@ library SupplyChainLib {
      * @param gradeBps The grade.
      */
     error SupplyChain__InvalidGrade(uint16 gradeBps);
+
+    /**
+     * @notice The grade of lot `tokenId` can no longer be declared: the caller is not its owner, it is not newly
+     * registered, it was already declared, or an inspector already attested a grade.
+     * @param tokenId The lot.
+     */
+    error SupplyChain__CannotDeclareGrade(uint256 tokenId);
+
+    /**
+     * @notice Lot `tokenId` cannot be split: it is away from its owner's organisation, booked on a shipment, or
+     * the weights are zero or do not add up to its trusted weight.
+     * @param tokenId The lot.
+     */
+    error SupplyChain__CannotSplit(uint256 tokenId);
+
+    /**
+     * @notice `account` is neither the owner of lot `tokenId` nor an approved splitter.
+     * @param account The caller.
+     * @param tokenId The lot.
+     */
+    error SupplyChain__NotLotOwner(address account, uint256 tokenId);
 
     /**
      * @notice Checkpoints of type `cpType` can only be recorded through their dedicated function.

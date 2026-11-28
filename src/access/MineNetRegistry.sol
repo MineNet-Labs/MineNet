@@ -81,12 +81,12 @@ contract MineNetRegistry is AccessControlDefaultAdminRules, IMineNetRegistry {
     mapping(bytes32 authorityOrg => EnumerableSet.Bytes32Set) private _pendingRequests;
 
     /**
-     * @dev Enables the 12 default participant roles and installs the default action table ({Actions-defaults}).
+     * @dev Enables the 14 default participant roles and installs the default action table ({Actions-defaults}).
      * @param initialDelay Delay (seconds) before a proposed admin transfer can be accepted.
      * @param admin Initial platform admin; should be a multisig.
      */
     constructor(uint48 initialDelay, address admin) AccessControlDefaultAdminRules(initialDelay, admin) {
-        bytes32[12] memory roles = [
+        bytes32[14] memory roles = [
             Roles.MINER,
             Roles.REFINERY,
             Roles.TRANSPORTER,
@@ -98,7 +98,9 @@ contract MineNetRegistry is AccessControlDefaultAdminRules, IMineNetRegistry {
             Roles.ORACLE,
             Roles.PROCESSOR,
             Roles.CUSTOMS,
-            Roles.ACCREDITOR
+            Roles.ACCREDITOR,
+            Roles.FINANCIER,
+            Roles.INSURER
         ];
         for (uint256 i; i < roles.length; ++i) {
             _participantRoles.add(roles[i]);

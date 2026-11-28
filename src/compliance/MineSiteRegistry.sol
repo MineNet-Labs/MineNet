@@ -52,7 +52,12 @@ import {StaffLib} from "src/workforce/libraries/StaffLib.sol";
  * ## Staff
  * Company staff ({WorkforceManager} staff roles) can act at their sites: `MANAGE_SITE` declares a
  * site dormant or reactivates it, `SITE_SAFETY` records safety measures and `DECLARE_RESERVES`
- * declares reserves. Registering sites stays with the company's miner accounts.
+ * declares reserves and `RECORD_PRODUCTION` records extraction. Registering sites stays with the company's
+ * miner accounts.
+ *
+ * Production ledger: the holder records extraction per site and mineral ({recordExtraction}), and every lot
+ * registered on the {passport} draws on that balance ({consumeExtraction}). A site can therefore never lot more
+ * than it reported producing, which closes the main route for passing outside minerals off as the site's own.
  *
  * Apart from the public site location, only hashes and opaque ids are stored.
  */
@@ -143,6 +148,27 @@ contract MineSiteRegistry is ISiteRegistry {
      */
     mapping(uint256 siteId => bytes32[]) private _reserveMinerals;
 
+    /**
+     * @notice The lot passport allowed to draw on recorded extraction when lots are registered.
+     */
+    address public passport;
+
+    /**
+     * @dev Site => mineral => recorded extraction and how much of it was lotted.
+     */
+    mapping(uint256 siteId => mapping(bytes32 mineralType => SiteLib.Production)) private _production;
+
+    /**
+     * @notice Licensed extraction ceiling of a mineral at a site, in grams (0 = no ceiling set). Recorded
+     * extraction can never exceed it.
+     */
+    mapping(uint256 siteId => mapping(bytes32 mineralType => uint128)) public extractionCeiling;
+
+    /**
+     * @notice The {SiteOperations} contract that records output verified by a company inspector (zero = none).
+     */
+    address public siteOperations;
+
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -185,6 +211,31 @@ contract MineSiteRegistry is ISiteRegistry {
         _onlyRegistryAdmin();
         staff = staff_;
         emit SiteLib.StaffDirectorySet(address(staff_));
+    }
+
+    /**
+     * @notice Sets the lot passport allowed to draw on recorded extraction.
+     * @dev Only a {MineNetRegistry} admin.
+     * @param passport_ Lot passport ({LotPassport}); non-zero.
+     * @custom:emits PassportSet
+     */
+    function setPassport(address passport_) external {
+        _onlyRegistryAdmin();
+        if (passport_ == address(0)) revert SiteLib.MineSiteRegistry__NotPassport(passport_);
+        passport = passport_;
+        emit SiteLib.PassportSet(passport_);
+    }
+
+    /**
+     * @notice Sets the contract allowed to record inspector-verified output ({SiteOperations}).
+     * @dev Only a {MineNetRegistry} admin. Zero disables it.
+     * @param siteOperations_ The contract, or zero.
+     * @custom:emits SiteOperationsSet
+     */
+    function setSiteOperations(address siteOperations_) external {
+        _onlyRegistryAdmin();
+        siteOperations = siteOperations_;
+        emit SiteLib.SiteOperationsSet(siteOperations_);
     }
 
     /**
@@ -455,8 +506,131 @@ contract MineSiteRegistry is ISiteRegistry {
     }
 
     /*//////////////////////////////////////////////////////////////
+                               PRODUCTION
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Records extraction of a mineral at a site. Lots registered from the site draw on this balance, so a
+     * site can never lot more than it reported producing.
+     * @dev The holder's miner accounts or its staff with `RECORD_PRODUCTION` at the site. The site must be able to
+     * produce: Active, concession not revoked, mining licence valid. Never above the {extractionCeiling}. Site
+     * output normally arrives through inspected shift reports instead ({recordVerifiedExtraction}).
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier (e.g. `keccak256("TIN")`).
+     * @param quantity Quantity extracted, in grams; non-zero.
+     * @param evidenceHash Hash of the extraction record.
+     * @custom:emits ExtractionRecorded
+     */
+    function recordExtraction(uint256 siteId, bytes32 mineralType, uint128 quantity, bytes32 evidenceHash) external {
+        SiteLib.Site storage s = _requireSite(siteId);
+        SiteLib.Concession storage c = _concessions[s.concessionId];
+        _onlySiteActor(c.orgId, siteId, StaffLib.RECORD_PRODUCTION);
+        if (s.status != SiteLib.SiteStatus.Active || c.revoked || !licences.isValid(c.licenceId)) {
+            revert SiteLib.MineSiteRegistry__SiteNotProducing(siteId);
+        }
+        _addExtraction(siteId, mineralType, quantity);
+        emit SiteLib.ExtractionRecorded(siteId, mineralType, quantity, evidenceHash, msg.sender);
+    }
+
+    /**
+     * @notice Records output that the company's inspector weighed and approved in a shift report: it counts toward
+     * the site's extraction (and its licensed ceiling) and becomes official inventory that lots can be registered
+     * from.
+     * @dev Only {siteOperations}, which checked the inspector. Same production rules as {recordExtraction}.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param quantity Verified quantity, in grams; non-zero.
+     * @param evidenceHash Hash of the approved report and inspection.
+     * @param inspector Inspector who approved it.
+     * @custom:emits ExtractionRecorded
+     */
+    function recordVerifiedExtraction(
+        uint256 siteId,
+        bytes32 mineralType,
+        uint128 quantity,
+        bytes32 evidenceHash,
+        address inspector
+    ) external {
+        if (msg.sender != siteOperations || msg.sender == address(0)) {
+            revert SiteLib.MineSiteRegistry__NotSiteOperations(msg.sender);
+        }
+        SiteLib.Site storage s = _requireSite(siteId);
+        SiteLib.Concession storage c = _concessions[s.concessionId];
+        if (s.status != SiteLib.SiteStatus.Active || c.revoked || !licences.isValid(c.licenceId)) {
+            revert SiteLib.MineSiteRegistry__SiteNotProducing(siteId);
+        }
+        _addExtraction(siteId, mineralType, quantity);
+        emit SiteLib.ExtractionRecorded(siteId, mineralType, quantity, evidenceHash, inspector);
+    }
+
+    /**
+     * @notice Sets the licensed extraction ceiling of a mineral at a site (e.g. from the mining licence's
+     * approved production plan).
+     * @dev Only a regulator. Zero removes the ceiling; a ceiling below what is already extracted stops further
+     * extraction.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param ceiling Ceiling, in grams.
+     * @param docHash Hash of the licence decision.
+     * @custom:emits ExtractionCeilingSet
+     */
+    function setExtractionCeiling(uint256 siteId, bytes32 mineralType, uint128 ceiling, bytes32 docHash) external {
+        _onlyRegulator();
+        _requireSite(siteId);
+        extractionCeiling[siteId][mineralType] = ceiling;
+        emit SiteLib.ExtractionCeilingSet(siteId, mineralType, ceiling, docHash);
+    }
+
+    /**
+     * @notice Reduces a site's recorded, not yet lotted extraction (a correction, or a regulator's finding that
+     * production was overstated). Lotted quantities are history and are never reduced.
+     * @dev The holder's miner accounts, its staff with `RECORD_PRODUCTION` at the site, or a regulator.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param quantity Quantity to remove, in grams; non-zero and at most the unlotted balance.
+     * @param reasonHash Hash of the reason.
+     * @custom:emits ExtractionReduced
+     */
+    function reduceExtraction(uint256 siteId, bytes32 mineralType, uint128 quantity, bytes32 reasonHash) external {
+        SiteLib.Site storage s = _requireSite(siteId);
+        if (!registry.isAuthorized(msg.sender, Actions.REGULATE)) {
+            _onlySiteActor(_concessions[s.concessionId].orgId, siteId, StaffLib.RECORD_PRODUCTION);
+        }
+        if (quantity == 0) revert SiteLib.MineSiteRegistry__InvalidQuantity();
+        SiteLib.Production storage p = _production[siteId][mineralType];
+        uint128 available = p.extracted - p.lotted;
+        if (quantity > available) {
+            revert SiteLib.MineSiteRegistry__InsufficientExtraction(siteId, mineralType, available, quantity);
+        }
+        p.extracted -= quantity;
+        emit SiteLib.ExtractionReduced(siteId, mineralType, quantity, reasonHash, msg.sender);
+    }
+
+    /**
+     * @inheritdoc ISiteRegistry
+     * @custom:emits ExtractionLotted
+     */
+    function consumeExtraction(uint256 siteId, bytes32 mineralType, uint128 quantity) external {
+        if (msg.sender != passport || passport == address(0)) revert SiteLib.MineSiteRegistry__NotPassport(msg.sender);
+        SiteLib.Production storage p = _production[siteId][mineralType];
+        uint128 available = p.extracted - p.lotted;
+        if (quantity > available) {
+            revert SiteLib.MineSiteRegistry__InsufficientExtraction(siteId, mineralType, available, quantity);
+        }
+        p.lotted += quantity;
+        emit SiteLib.ExtractionLotted(siteId, mineralType, quantity);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                                   VIEWS
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @inheritdoc ISiteRegistry
+     */
+    function productionOf(uint256 siteId, bytes32 mineralType) external view returns (SiteLib.Production memory) {
+        return _production[siteId][mineralType];
+    }
 
     /**
      * @inheritdoc ISiteRegistry
@@ -592,6 +766,23 @@ contract MineSiteRegistry is ISiteRegistry {
     /*//////////////////////////////////////////////////////////////
                                 INTERNAL
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Adds extraction, reverting on zero or above the licensed ceiling.
+     * @param siteId Site id.
+     * @param mineralType Mineral identifier.
+     * @param quantity Quantity, in grams.
+     */
+    function _addExtraction(uint256 siteId, bytes32 mineralType, uint128 quantity) private {
+        if (quantity == 0) revert SiteLib.MineSiteRegistry__InvalidQuantity();
+        SiteLib.Production storage p = _production[siteId][mineralType];
+        uint128 extracted = p.extracted + quantity;
+        uint128 ceiling = extractionCeiling[siteId][mineralType];
+        if (ceiling != 0 && extracted > ceiling) {
+            revert SiteLib.MineSiteRegistry__CeilingExceeded(siteId, mineralType, ceiling, extracted);
+        }
+        p.extracted = extracted;
+    }
 
     /**
      * @dev Moves a site to `status` and timestamps the change.

@@ -5,6 +5,8 @@ import {IDeliveryManager} from "src/traceability/interfaces/IDeliveryManager.sol
 import {IMineNetRegistry} from "src/access/interfaces/IMineNetRegistry.sol";
 import {ILotPassport} from "src/traceability/interfaces/ILotPassport.sol";
 import {ISupplyChain} from "src/traceability/interfaces/ISupplyChain.sol";
+import {IStaffDirectory} from "src/workforce/interfaces/IStaffDirectory.sol";
+import {StaffLib} from "src/workforce/libraries/StaffLib.sol";
 import {Actions} from "src/access/libraries/Actions.sol";
 import {DeliveryLib} from "src/traceability/libraries/DeliveryLib.sol";
 import {SupplyChainLib} from "src/traceability/libraries/SupplyChainLib.sol";
@@ -82,6 +84,16 @@ contract DeliveryManager is IDeliveryManager {
     mapping(address carrier => DeliveryLib.CarrierStats) public carrierStats;
 
     /**
+     * @notice Company staff directory, for site managers dispatching their company's lots (zero = none).
+     */
+    IStaffDirectory public staffDirectory;
+
+    /**
+     * @notice Vehicle, driver, receiving worker and dispatcher of a dispatched shipment.
+     */
+    mapping(uint256 shipmentId => DeliveryLib.Transport) public transportOf;
+
+    /**
      * @param registry_ Participant, role and permission registry.
      * @param passport_ Lot passport.
      * @param supplyChain_ Supply-chain ledger.
@@ -90,6 +102,22 @@ contract DeliveryManager is IDeliveryManager {
         registry = registry_;
         passport = passport_;
         supplyChain = supplyChain_;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                  ADMIN
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Sets the company staff directory ({WorkforceManager}) checked when staff dispatch lots.
+     * @dev Only a {MineNetRegistry} admin.
+     * @param staff_ The directory, or zero to disable staff dispatch.
+     * @custom:emits StaffDirectorySet
+     */
+    function setStaffDirectory(IStaffDirectory staff_) external {
+        if (!registry.isAdmin(msg.sender)) revert DeliveryLib.DeliveryManager__Unauthorized(msg.sender);
+        staffDirectory = staff_;
+        emit DeliveryLib.StaffDirectorySet(address(staff_));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -117,53 +145,74 @@ contract DeliveryManager is IDeliveryManager {
         bytes32 sealId,
         bytes32 routeHash
     ) external returns (uint256 shipmentId) {
-        uint256 n = tokenIds.length;
+        shipmentId = _book(msg.sender, tokenIds, carrier, consignee, eta, sealId, routeHash);
+    }
+
+    /**
+     * @notice Dispatches lots to a carrier, signing the physical handover: the vehicle plate, the driver, the
+     * receiving worker at the (verified) consignee, and the weight handed over per lot.
+     * @dev The custodian of every lot, or staff of the custodian's company holding `DISPATCH_LOTS` at every lot's
+     * mine site (the site manager dispatching the company's lots; the shipment is booked for the company). The
+     * same rules as {createShipment} apply. The carrier checks the weights at pickup ({confirmPickup}).
+     * @param d The dispatch.
+     * @return shipmentId New shipment id.
+     * @custom:emits ShipmentCreated
+     * @custom:emits Dispatched
+     */
+    function dispatch(DeliveryLib.DispatchInput calldata d) external returns (uint256 shipmentId) {
+        uint256 n = d.tokenIds.length;
         if (n == 0) revert DeliveryLib.DeliveryManager__EmptyShipment();
-        if (n > MAX_LOTS_PER_SHIPMENT) revert DeliveryLib.DeliveryManager__TooManyLots();
-        if (sealId == bytes32(0)) revert DeliveryLib.DeliveryManager__InvalidSeal();
-        if (carrier == msg.sender || !registry.isAuthorized(carrier, Actions.CARRY)) {
-            revert DeliveryLib.DeliveryManager__InvalidCarrier(carrier);
+        if (d.plateNo == bytes32(0) || d.driverRef == bytes32(0) || d.weights.length != n) {
+            revert DeliveryLib.DeliveryManager__InvalidTransport();
         }
-        if (consignee == msg.sender || consignee == carrier || !_isConsignee(consignee)) {
-            revert DeliveryLib.DeliveryManager__InvalidConsignee(consignee);
-        }
-        if (eta <= block.timestamp) revert DeliveryLib.DeliveryManager__InvalidEta(eta);
-
-        shipmentId = _nextShipmentId++;
-        for (uint256 i; i < n; ++i) {
-            uint256 id = tokenIds[i];
-            if (passport.custodianOf(id) != msg.sender) {
-                revert DeliveryLib.DeliveryManager__NotCustodian(id, msg.sender);
+        address shipper = passport.custodianOf(d.tokenIds[0]);
+        if (msg.sender != shipper) {
+            if (d.carrier == msg.sender) revert DeliveryLib.DeliveryManager__InvalidCarrier(d.carrier);
+            IStaffDirectory dir = staffDirectory;
+            bytes32 orgId = registry.participant(shipper).orgId;
+            for (uint256 i; i < n; ++i) {
+                if (
+                    address(dir) == address(0) || orgId == bytes32(0)
+                        || dir.staffOrg(msg.sender, passport.siteOf(d.tokenIds[i]), StaffLib.DISPATCH_LOTS) != orgId
+                ) revert DeliveryLib.DeliveryManager__Unauthorized(msg.sender);
             }
-            uint256 existing = activeShipmentOf[id];
-            if (existing != 0) revert DeliveryLib.DeliveryManager__AlreadyInShipment(id, existing); // also catches duplicate ids
-            activeShipmentOf[id] = shipmentId;
         }
+        shipmentId = _book(shipper, d.tokenIds, d.carrier, d.consignee, d.eta, d.sealId, d.routeHash);
+        transportOf[shipmentId] = DeliveryLib.Transport({
+            plateNo: d.plateNo, driverRef: d.driverRef, receiverRef: d.receiverRef, dispatchedBy: msg.sender
+        });
+        emit DeliveryLib.Dispatched(shipmentId, msg.sender, d.plateNo, d.driverRef, d.receiverRef, d.weights);
+    }
 
+    /**
+     * @notice The consignee names (or changes) the worker who will receive the shipment.
+     * @dev Only the consignee, before delivery.
+     * @param shipmentId Shipment id.
+     * @param receiverRef Hashed id of the receiving worker.
+     * @custom:emits ReceiverNamed
+     */
+    function setReceiver(uint256 shipmentId, bytes32 receiverRef) external {
         DeliveryLib.Shipment storage s = _shipments[shipmentId];
-        s.shipper = msg.sender;
-        s.carrier = carrier;
-        s.consignee = consignee;
-        s.createdAt = uint64(block.timestamp);
-        s.eta = eta;
-        s.status = DeliveryLib.ShipmentStatus.Created;
-        s.sealId = sealId;
-        s.routeHash = routeHash;
-        _shipmentLots[shipmentId] = tokenIds;
-
-        emit DeliveryLib.ShipmentCreated(shipmentId, msg.sender, carrier, consignee, tokenIds, eta, sealId, routeHash);
+        if (msg.sender != s.consignee) revert DeliveryLib.DeliveryManager__Unauthorized(msg.sender);
+        if (s.status == DeliveryLib.ShipmentStatus.Delivered || s.status == DeliveryLib.ShipmentStatus.Cancelled) {
+            revert DeliveryLib.DeliveryManager__InvalidState(shipmentId, s.status);
+        }
+        transportOf[shipmentId].receiverRef = receiverRef;
+        emit DeliveryLib.ReceiverNamed(shipmentId, receiverRef);
     }
 
     /**
      * @notice Cancels a shipment before pickup and frees its lots.
-     * @dev Only the shipper, while the shipment is `Created`.
+     * @dev Only the shipper (or the staff member who dispatched it), while the shipment is `Created`.
      * @param shipmentId Shipment id.
      * @param reasonHash Hash of the reason.
      * @custom:emits ShipmentCancelled
      */
     function cancelShipment(uint256 shipmentId, bytes32 reasonHash) external {
         DeliveryLib.Shipment storage s = _shipments[shipmentId];
-        if (msg.sender != s.shipper) revert DeliveryLib.DeliveryManager__Unauthorized(msg.sender);
+        if (msg.sender != s.shipper && msg.sender != transportOf[shipmentId].dispatchedBy) {
+            revert DeliveryLib.DeliveryManager__Unauthorized(msg.sender);
+        }
         _requireStatus(shipmentId, DeliveryLib.ShipmentStatus.Created);
         _cancel(shipmentId, reasonHash);
     }
@@ -439,6 +488,63 @@ contract DeliveryManager is IDeliveryManager {
     /*//////////////////////////////////////////////////////////////
                                  INTERNAL
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Books a shipment for `shipper`, the custodian of every lot.
+     * @param shipper Custodian shipping the lots.
+     * @param tokenIds Lots to ship.
+     * @param carrier Carrier.
+     * @param consignee Consignee.
+     * @param eta Expected time of arrival.
+     * @param sealId Dispatch seal.
+     * @param routeHash Planned route / transport permit.
+     * @return shipmentId New shipment id.
+     */
+    function _book(
+        address shipper,
+        uint256[] calldata tokenIds,
+        address carrier,
+        address consignee,
+        uint64 eta,
+        bytes32 sealId,
+        bytes32 routeHash
+    ) private returns (uint256 shipmentId) {
+        uint256 n = tokenIds.length;
+        if (n == 0) revert DeliveryLib.DeliveryManager__EmptyShipment();
+        if (n > MAX_LOTS_PER_SHIPMENT) revert DeliveryLib.DeliveryManager__TooManyLots();
+        if (sealId == bytes32(0)) revert DeliveryLib.DeliveryManager__InvalidSeal();
+        if (carrier == shipper || !registry.isAuthorized(carrier, Actions.CARRY)) {
+            revert DeliveryLib.DeliveryManager__InvalidCarrier(carrier);
+        }
+        if (consignee == shipper || consignee == carrier || !_isConsignee(consignee)) {
+            revert DeliveryLib.DeliveryManager__InvalidConsignee(consignee);
+        }
+        if (eta <= block.timestamp) revert DeliveryLib.DeliveryManager__InvalidEta(eta);
+
+        shipmentId = _nextShipmentId++;
+        for (uint256 i; i < n; ++i) {
+            uint256 id = tokenIds[i];
+            if (passport.custodianOf(id) != shipper) {
+                revert DeliveryLib.DeliveryManager__NotCustodian(id, shipper);
+            }
+            uint256 existing = activeShipmentOf[id];
+            if (existing != 0) revert DeliveryLib.DeliveryManager__AlreadyInShipment(id, existing); // also catches duplicate ids
+            activeShipmentOf[id] = shipmentId;
+        }
+
+        DeliveryLib.Shipment storage s = _shipments[shipmentId];
+        s.shipper = shipper;
+        s.carrier = carrier;
+        s.consignee = consignee;
+        s.createdAt = uint64(block.timestamp);
+        s.eta = eta;
+        s.status = DeliveryLib.ShipmentStatus.Created;
+        s.sealId = sealId;
+        s.routeHash = routeHash;
+        _shipmentLots[shipmentId] = tokenIds;
+
+        emit DeliveryLib.ShipmentCreated(shipmentId, shipper, carrier, consignee, tokenIds, eta, sealId, routeHash);
+    }
 
     /**
      * @dev Records one {SupplyChain} checkpoint per lot (weight + condition). A seal mismatch is recorded as
