@@ -1,0 +1,783 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrgStatus {
+  PENDING
+  VALIDATED
+  SUSPENDED
+}
+
+enum ParticipantRole {
+  ADMIN
+  REGULATOR
+  MINER
+  INSPECTOR
+  TRANSPORTER
+  WAREHOUSE
+  PROCESSOR
+  REFINERY
+  CUSTOMS
+  BUYER
+  INSURER
+  FINANCIER
+  AUDITOR
+  ORACLE
+  ACCREDITOR
+}
+
+enum LotStatus {
+  REGISTERED
+  INSPECTED
+  REJECTED
+  CONSUMED
+}
+
+enum SiteStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ShaftStatus {
+  OPERATIONAL
+  MAINTENANCE
+  CLOSED
+}
+
+enum InspectionStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
+enum ListingStatus {
+  ACTIVE
+  RESERVED
+  SOLD
+  CANCELLED
+}
+
+enum BuyerRequestStatus {
+  OPEN
+  FULFILLED
+  CLOSED
+}
+
+enum OfferStatus {
+  PENDING
+  COUNTERED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum EscrowStatus {
+  LOCKED
+  RELEASED
+  REFUNDED
+  DISPUTED
+}
+
+enum TransferKind {
+  TRANSPORT
+  WAREHOUSE
+}
+
+enum TransferStatus {
+  AWAITING_HANDOVER
+  IN_TRANSIT
+  DELIVERED
+  STORED
+  CANCELLED
+}
+
+enum CoverType {
+  STORAGE
+  TRANSIT
+  STORAGE_AND_TRANSIT
+}
+
+enum PolicyStatus {
+  REQUESTED
+  QUOTED
+  ACTIVE
+  EXPIRED
+  DECLINED
+}
+
+enum ClaimStatus {
+  FILED
+  APPROVED
+  REJECTED
+}
+
+enum LoanStatus {
+  REQUESTED
+  ACTIVE
+  REPAID
+  DECLINED
+}
+
+enum WorkerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  ON_LEAVE
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PayrollStatus {
+  PENDING
+  PAID
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+}
+
+enum AgreementKind {
+  SUPPLY
+  SERVICE
+}
+
+enum AgreementStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  TERMINATED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum ReportStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+model Organization {
+  id              String     @id @default(cuid())
+  orgIdBytes32    String?    @unique
+  name            String
+  kind            String
+  rdbNumber       String?    @unique
+  tin             String?
+  regulatorName   String?
+  licenceNumber   String?
+  licenceIssuedAt    DateTime?
+  licenceExpiryAt    DateTime?
+  renewalRequestedAt DateTime?
+  renewalNote        String?
+  status             OrgStatus @default(PENDING)
+  payoutWallet    String?
+  contactName     String?
+  contactEmail    String?
+  contactPhone    String?
+  address         String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  users      User[]
+  sites      MineSite[]
+  lots       MineralLot[]
+  documents  Document[]
+  workers    Worker[]
+  invites    TeamInvite[]
+  agreements B2bAgreement[]
+}
+
+model MineSite {
+  id             String       @id @default(cuid())
+  code           String       @unique
+  name           String
+  district       String
+  location       String
+  lat            Float
+  lng            Float
+  status         SiteStatus   @default(ACTIVE)
+  areaHa         Float
+  minerals       String[]
+  licence        String
+  licenceExpiry  DateTime
+  manager        String
+  lastActivity   DateTime?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  shafts            MineShaft[]
+  lots              MineralLot[]
+  workers           Worker[]
+  extractionRecords ExtractionRecord[]
+  incidents         SafetyIncident[]
+  siteReports       SiteReport[]
+
+  @@index([organizationId])
+}
+
+model MineShaft {
+  id             String      @id @default(cuid())
+  code           String      @unique
+  name           String
+  depthM         Float
+  mineral        String
+  status         ShaftStatus @default(OPERATIONAL)
+  lastInspection DateTime?
+  siteId         String
+  site           MineSite    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([siteId])
+}
+
+model User {
+  id             String            @id @default(cuid())
+  walletAddress  String?           @unique
+  fullName       String?
+  email          String?           @unique
+  passwordHash   String?
+  roles          ParticipantRole[]
+  isSuspended    Boolean           @default(false)
+  nonce          String?
+  organizationId String?
+  organization   Organization?     @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model MineralLot {
+  id              String       @id @default(cuid())
+  lotCode         String       @unique
+  lotIdBytes32    String?      @unique
+  tokenId         BigInt?      @unique
+  mineralType     String
+  quantityGrams   BigInt
+  gradePct        Float?
+  status          LotStatus    @default(REGISTERED)
+  regulatorHold   Boolean      @default(false)
+  openFlags       Int          @default(0)
+  ownerWallet     String
+  custodianWallet String
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  siteId          String?
+  site            MineSite?    @relation(fields: [siteId], references: [id])
+  shaftId         String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  events      LotEvent[]
+  documents   Document[]
+  inspections Inspection[]
+  listings    Listing[]
+  offers      Offer[]
+  escrows     Escrow[]
+  transfers   CustodyTransfer[]
+  policies    InsurancePolicy[]
+  claims      InsuranceClaim[]
+  loans       Loan[]
+
+  @@index([organizationId])
+  @@index([siteId])
+}
+
+model Inspection {
+  id               String           @id @default(cuid())
+  code             String           @unique
+  lotId            String
+  lot              MineralLot       @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  siteId           String?
+  shaft            String?
+  type             String
+  inspectorName    String?
+  inspectorWallet  String?
+  status           InspectionStatus @default(PENDING)
+  measuredGradePct Float?
+  sampleId         String?
+  method           String?
+  findings         String?
+  submittedAt      DateTime         @default(now())
+  completedAt      DateTime?
+  updatedAt        DateTime         @updatedAt
+
+  @@index([lotId])
+  @@index([status])
+}
+
+model LotEvent {
+  id           String     @id @default(cuid())
+  lotId        String
+  lot          MineralLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  eventType    String
+  actorWallet  String
+  actorName    String?
+  actorRole    String?
+  counterparty String?
+  dataHash     String
+  txHash       String?
+  blockNumber  BigInt?
+  detail       String?
+  occurredAt   DateTime   @default(now())
+
+  @@index([lotId, occurredAt])
+  @@index([txHash])
+}
+
+model Document {
+  id             String        @id @default(cuid())
+  docType        String
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  storageKey     String        @unique
+  sha256Hash     String
+  keccak256Hash  String?
+  encrypted      Boolean       @default(true)
+  uploadedBy     String
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  lotId          String?
+  lot            MineralLot?   @relation(fields: [lotId], references: [id])
+  createdAt      DateTime      @default(now())
+
+  @@index([sha256Hash])
+  @@index([lotId])
+}
+
+/// Cursor table shared with the Go Base L2 event indexer.
+model IndexerCursor {
+  contractName    String   @id
+  contractAddress String
+  chainId         Int
+  lastBlock       BigInt   @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
+model Listing {
+  id             String        @id @default(cuid())
+  code           String        @unique
+  lotId          String
+  lot            MineralLot    @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  organizationId String
+  pricePerKg     Float
+  quantityKg     Float
+  currency       String        @default("USD")
+  status         ListingStatus @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  offers Offer[]
+
+  @@index([lotId])
+  @@index([status])
+}
+
+model BuyerRequest {
+  id          String             @id @default(cuid())
+  code        String             @unique
+  buyerName   String
+  buyerWallet String?
+  verified    Boolean            @default(true)
+  mineralType String
+  requiredKg  Float
+  remainingKg Float
+  targetGrade String
+  pricePerKg  Float
+  currency    String             @default("USD")
+  city        String
+  country     String
+  deadline    DateTime
+  status      BuyerRequestStatus @default(OPEN)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  offers Offer[]
+
+  @@index([mineralType])
+  @@index([status])
+}
+
+model Offer {
+  id             String        @id @default(cuid())
+  code           String        @unique
+  lotId          String
+  lot            MineralLot    @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  listingId      String?
+  listing        Listing?      @relation(fields: [listingId], references: [id])
+  buyerRequestId String?
+  buyerRequest   BuyerRequest? @relation(fields: [buyerRequestId], references: [id])
+  buyerName      String
+  buyerWallet    String?
+  pricePerKg     Float
+  quantityKg     Float
+  currency       String        @default("USD")
+  status         OfferStatus   @default(PENDING)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  messages OfferMessage[]
+  escrow   Escrow?
+
+  @@index([lotId])
+  @@index([status])
+}
+
+model OfferMessage {
+  id         String   @id @default(cuid())
+  offerId    String
+  offer      Offer    @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  senderSide String   // "SELLER" | "BUYER"
+  pricePerKg Float
+  quantityKg Float
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@index([offerId, createdAt])
+}
+
+model Escrow {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  lotId       String
+  lot         MineralLot   @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  offerId     String?      @unique
+  offer       Offer?       @relation(fields: [offerId], references: [id])
+  buyerName   String
+  buyerWallet String?
+  amount      Float
+  currency    String       @default("USD")
+  status      EscrowStatus @default(LOCKED)
+  lienRepaid  Float?
+  txHash      String?
+  lockedAt    DateTime     @default(now())
+  releasedAt  DateTime?
+  updatedAt   DateTime     @updatedAt
+
+  @@index([lotId])
+  @@index([status])
+}
+
+model CustodyTransfer {
+  id                String         @id @default(cuid())
+  code              String         @unique
+  lotId             String
+  lot               MineralLot     @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  kind              TransferKind
+  partyName         String
+  partyWallet       String?
+  fromLocation      String
+  toLocation        String
+  sealId            String
+  vehicle           String?
+  status            TransferStatus @default(AWAITING_HANDOVER)
+  senderConfirmed   Boolean        @default(true)
+  receiverConfirmed Boolean        @default(false)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([lotId])
+  @@index([status])
+}
+
+model InsurancePolicy {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  lotId       String
+  lot         MineralLot   @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  insurerCode String
+  insurerName String
+  coverType   CoverType
+  sumInsured  Float
+  premium     Float?
+  currency    String       @default("USD")
+  status      PolicyStatus @default(REQUESTED)
+  validFrom   DateTime
+  validTo     DateTime
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  claims InsuranceClaim[]
+
+  @@index([lotId])
+  @@index([insurerCode])
+  @@index([status])
+}
+
+model InsuranceClaim {
+  id           String          @id @default(cuid())
+  code         String          @unique
+  policyId     String
+  policy       InsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  lotId        String
+  lot          MineralLot      @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  reason       String
+  amount       Float
+  currency     String          @default("USD")
+  status       ClaimStatus     @default(FILED)
+  decisionNote String?
+  filedAt      DateTime        @default(now())
+  decidedAt    DateTime?
+  updatedAt    DateTime        @updatedAt
+
+  @@index([policyId])
+  @@index([lotId])
+  @@index([status])
+}
+
+model Loan {
+  id            String     @id @default(cuid())
+  code          String     @unique
+  lotId         String
+  lot           MineralLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  financierCode String
+  financierName String
+  amount        Float
+  currency      String     @default("USD")
+  ratePct       Float
+  termDays      Int
+  purpose       String
+  status        LoanStatus @default(REQUESTED)
+  requestedAt   DateTime   @default(now())
+  dueAt         DateTime?
+  repaidAt      DateTime?
+  updatedAt     DateTime   @updatedAt
+
+  @@index([lotId])
+  @@index([status])
+}
+
+model Worker {
+  id             String       @id @default(cuid())
+  code           String       @unique
+  fullName       String
+  category       String
+  phone          String?
+  accessBadge    String       @default("Setup pending")
+  status         WorkerStatus @default(ACTIVE)
+  joinedAt       DateTime     @default(now())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  siteId         String
+  site           MineSite     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  attendance    AttendanceRecord[]
+  leaveRequests LeaveRequest[]
+  payrolls      PayrollRecord[]
+
+  @@index([organizationId])
+  @@index([siteId])
+}
+
+model AttendanceRecord {
+  id          String           @id @default(cuid())
+  workerId    String
+  worker      Worker           @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  date        DateTime
+  status      AttendanceStatus @default(PRESENT)
+  hoursWorked Float            @default(8)
+  note        String?
+  createdAt   DateTime         @default(now())
+
+  @@index([workerId, date])
+}
+
+model LeaveRequest {
+  id         String         @id @default(cuid())
+  workerId   String
+  worker     Worker         @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  leaveType  String
+  startDate  DateTime
+  endDate    DateTime
+  reason     String
+  status     ApprovalStatus @default(PENDING)
+  decidedBy  String?
+  decidedAt  DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([workerId])
+  @@index([status])
+}
+
+model PayrollRecord {
+  id         String        @id @default(cuid())
+  workerId   String
+  worker     Worker        @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  period     String        // e.g. "2026-11"
+  basePay    Float
+  bonus      Float         @default(0)
+  deductions Float         @default(0)
+  netPay     Float
+  currency   String        @default("RWF")
+  status     PayrollStatus @default(PENDING)
+  paidAt     DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([workerId, period])
+}
+
+model ExtractionRecord {
+  id          String         @id @default(cuid())
+  code        String         @unique
+  siteId      String
+  site        MineSite       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  shaftId     String?
+  mineralType String
+  quantityKg  Float
+  extractedAt DateTime       @default(now())
+  status      ApprovalStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([siteId])
+  @@index([status])
+}
+
+model SafetyIncident {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  siteId      String
+  site        MineSite         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  severity    IncidentSeverity @default(MEDIUM)
+  title       String
+  description String
+  reportedBy  String
+  status      IncidentStatus   @default(OPEN)
+  resolvedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([siteId])
+  @@index([status])
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  audience       String   @default("miner")
+  kind           String
+  text           String
+  href           String?
+  read           Boolean  @default(false)
+  organizationId String?
+  createdAt      DateTime @default(now())
+
+  @@index([audience, read])
+}
+
+model B2bAgreement {
+  id               String          @id @default(cuid())
+  code             String          @unique
+  kind             AgreementKind
+  organizationId   String
+  organization     Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  counterpartyName String
+  mineralOrService String
+  quantityKg       Float?
+  unitPrice        Float
+  currency         String          @default("USD")
+  startDate        DateTime
+  endDate          DateTime
+  status           AgreementStatus @default(DRAFT)
+  terms            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model TeamInvite {
+  id             String            @id @default(cuid())
+  token          String            @unique
+  email          String
+  fullName       String?
+  roles          ParticipantRole[]
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  status         InviteStatus      @default(PENDING)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime          @default(now())
+
+  @@index([email])
+  @@index([organizationId])
+}
+
+model SiteReport {
+  id              String       @id @default(cuid())
+  code            String       @unique
+  siteId          String
+  site            MineSite     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  period          String       // e.g. "2026-11"
+  author          String
+  summary         String
+  productionKg    Float        @default(0)
+  safetyScore     Int          @default(100)
+  complianceNotes String?
+  status          ReportStatus @default(SUBMITTED)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([siteId])
+  @@index([period])
+}
+
+model SupportTicket {
+  id             String       @id @default(cuid())
+  code           String       @unique
+  portal         String       @default("miner")
+  category       String
+  subject        String
+  message        String
+  submittedBy    String
+  organizationId String?
+  status         TicketStatus @default(OPEN)
+  resolutionNote String?
+  resolvedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([portal, status])
+}

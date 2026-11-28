@@ -31,3 +31,6 @@ dist/
 # Secrets
 .env.*
 !.env.example
+
+# Local encrypted uploads
+backend/api/uploads/
